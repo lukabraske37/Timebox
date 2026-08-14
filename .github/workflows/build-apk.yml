@@ -8,6 +8,10 @@ on:
 jobs:
   apk:
     runs-on: ubuntu-latest
+    # Creating the release needs write access to the repository contents; the
+    # default token is read-only and the release step fails with a 403.
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
