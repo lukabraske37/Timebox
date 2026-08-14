@@ -12,7 +12,7 @@ const _schema = 1;
 
 /// Vertical pixels per minute for each zoom step.
 const Map<String, double> kZoom = {'compact': 0.45, 'normal': 0.85, 'roomy': 1.5};
-const double kMinNode = 56;
+const double kMinNode = 76;
 const double kRowGap = 10;
 
 class HabitRange {
