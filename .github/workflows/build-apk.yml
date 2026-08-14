@@ -27,7 +27,13 @@ jobs:
 
       # The android/ folder is generated here, so no binary Gradle files live in git.
       - name: Scaffold the Android project
-        run: flutter create --platforms=android --org com.timebox --project-name timebox .
+        # `flutter create` also restores its own template files, including a
+        # counter-app test that calls MyApp() — a class this project does not
+        # have. It fails to compile and takes the rest of the suite down with
+        # it, so drop it again right away.
+        run: |
+          flutter create --platforms=android --org com.timebox --project-name timebox .
+          rm -f test/widget_test.dart
 
       - name: Apply manifest permissions
         run: cp android_overrides/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
