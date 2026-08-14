@@ -28,6 +28,23 @@ jobs:
       - name: Apply manifest permissions
         run: cp android_overrides/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
 
+      - name: Align Kotlin JVM target across all plugin subprojects
+        # Some plugins (e.g. flutter_timezone) still compile Kotlin against
+        # JVM target 1.8 while Flutter's generated build compiles Java
+        # against 11, which Gradle rejects as "Inconsistent JVM Target
+        # Compatibility". Force every subproject's Kotlin tasks to match.
+        run: |
+          cat >> android/build.gradle.kts <<'EOF'
+
+          subprojects {
+              afterEvaluate {
+                  tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+                      kotlinOptions.jvmTarget = "11"
+                  }
+              }
+          }
+          EOF
+
       - name: Raise minSdk to 23 (biometrics need it)
         run: |
           sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 23/' android/app/build.gradle.kts || true
