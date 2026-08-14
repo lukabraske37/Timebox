@@ -42,13 +42,22 @@ jobs:
         # must compile against 36, so the older plugins fail their AAR metadata
         # check. Raising compileSdk changes only which APIs are on the compile
         # classpath; minSdk and targetSdk stay where they are.
+        #
+        # This has to run in afterEvaluate: a plugin sets its own compileSdk in
+        # the body of its build.gradle, so anything applied while the plugin is
+        # merely being loaded gets overwritten a moment later. Projects Flutter
+        # has already evaluated by this point (:app) are skipped, since
+        # afterEvaluate on them would throw.
         run: |
           cat >> android/build.gradle.kts <<'EOF'
 
           subprojects {
-              plugins.withId("com.android.library") {
-                  extensions.configure<com.android.build.gradle.LibraryExtension> {
-                      compileSdk = 36
+              if (!state.executed) {
+                  afterEvaluate {
+                      val androidExtension = extensions.findByName("android")
+                      if (androidExtension is com.android.build.api.dsl.LibraryExtension) {
+                          androidExtension.compileSdk = 36
+                      }
                   }
               }
           }
