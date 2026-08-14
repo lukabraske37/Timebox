@@ -41,6 +41,25 @@ jobs:
           sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 23/' android/app/build.gradle.kts || true
           sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 23/' android/app/build.gradle || true
 
+      - name: Enable core library desugaring (required by flutter_local_notifications)
+        # The plugin schedules alarms with java.time, which only exists from API
+        # 26 up, so it declares in its AAR metadata that the app must desugar the
+        # JDK library. A second android {} block just reconfigures the same
+        # extension, which keeps this independent of the generated file's layout.
+        run: |
+          cat >> android/app/build.gradle.kts <<'EOF'
+
+          android {
+              compileOptions {
+                  isCoreLibraryDesugaringEnabled = true
+              }
+          }
+
+          dependencies {
+              coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+          }
+          EOF
+
       - name: Use a FlutterFragmentActivity (required by local_auth)
         run: |
           f=$(find android/app/src/main -name MainActivity.kt)
