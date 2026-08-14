@@ -28,25 +28,13 @@ jobs:
       - name: Apply manifest permissions
         run: cp android_overrides/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
 
-      - name: Pin every subproject to JVM target 17
-        # Plugins ship their own Java/Kotlin target (1.8 or 11) while the
-        # generated Flutter build compiles Java at 17, and Gradle rejects the
-        # mismatch as "Inconsistent JVM Target Compatibility". Pinning *both*
-        # compilers of every subproject to 17 keeps the two sides in step no
-        # matter what each plugin declares.
-        run: |
-          cat >> android/build.gradle.kts <<'EOF'
-
-          subprojects {
-              tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
-                  compilerOptions.jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
-              }
-              tasks.withType<JavaCompile>().configureEach {
-                  sourceCompatibility = JavaVersion.VERSION_17.toString()
-                  targetCompatibility = JavaVersion.VERSION_17.toString()
-              }
-          }
-          EOF
+      - name: Let each plugin keep its own JVM target
+        # Every plugin declares its own Java and Kotlin target — flutter_timezone
+        # compiles Java at 11, share_plus at 17 — and Kotlin 2.x refuses to build
+        # whenever the two sides of one module disagree. Pinning a single value
+        # only moves the mismatch from one plugin to the next, so switch the
+        # check off instead: D8 dexes every class file version they produce.
+        run: echo 'kotlin.jvm.target.validation.mode=IGNORE' >> android/gradle.properties
 
       - name: Raise minSdk to 23 (biometrics need it)
         run: |
