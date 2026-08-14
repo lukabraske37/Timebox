@@ -36,6 +36,24 @@ jobs:
         # check off instead: D8 dexes every class file version they produce.
         run: echo 'kotlin.jvm.target.validation.mode=IGNORE' >> android/gradle.properties
 
+      - name: Compile every plugin against SDK 36
+        # Plugins pin their own compileSdk — file_picker still sits on 34 — but
+        # flutter_plugin_android_lifecycle now declares that everything using it
+        # must compile against 36, so the older plugins fail their AAR metadata
+        # check. Raising compileSdk changes only which APIs are on the compile
+        # classpath; minSdk and targetSdk stay where they are.
+        run: |
+          cat >> android/build.gradle.kts <<'EOF'
+
+          subprojects {
+              plugins.withId("com.android.library") {
+                  extensions.configure<com.android.build.gradle.LibraryExtension> {
+                      compileSdk = 36
+                  }
+              }
+          }
+          EOF
+
       - name: Raise minSdk to 23 (biometrics need it)
         run: |
           sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 23/' android/app/build.gradle.kts || true
