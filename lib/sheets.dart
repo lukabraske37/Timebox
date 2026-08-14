@@ -135,21 +135,13 @@ class _BlockSheetState extends State<_BlockSheet> {
       footer: Column(children: [
         PrimaryButton(label: editing ? 'Save Changes' : 'Create Task', onTap: _save),
         if (editing) ...[
-          const SizedBox(height: 8),
-          GestureDetector(
+          const SizedBox(height: 10),
+          DeleteButton(
+            label: 'Delete Task',
             onTap: () {
               store.deleteBlock(widget.existing!.id);
               Navigator.pop(context);
             },
-            child: Container(
-              height: 48,
-              alignment: Alignment.center,
-              child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                Icon(Icons.delete, size: 20, color: c.danger),
-                const SizedBox(width: 8),
-                Text('Delete Task', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: c.danger)),
-              ]),
-            ),
           ),
         ],
       ]),
@@ -480,18 +472,14 @@ class _SimpleSheetState extends State<_SimpleSheet> {
       footer: Column(children: [
         PrimaryButton(label: ctas[widget.kind]!, onTap: _save),
         if (_editing && widget.kind != _SimpleKind.habit) ...[
-          const SizedBox(height: 8),
-          GestureDetector(
+          const SizedBox(height: 10),
+          DeleteButton(
+            label: 'Delete',
             onTap: () {
               if (widget.inbox != null) store.deleteInbox(widget.inbox!.id);
               if (widget.task != null) store.deleteTask(widget.task!.id);
               Navigator.pop(context);
             },
-            child: Container(
-              height: 48,
-              alignment: Alignment.center,
-              child: Text('Delete', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: c.danger)),
-            ),
           ),
         ],
       ]),
@@ -566,6 +554,38 @@ class _SimpleSheetState extends State<_SimpleSheet> {
 
 // ---------------------------------------------------------------- shared parts
 
+/// The destructive action at the foot of an editor sheet. Tinted rather than
+/// bare text so it reads as a button and gives the tap somewhere to land.
+class DeleteButton extends StatelessWidget {
+  final String label;
+  final VoidCallback onTap;
+
+  const DeleteButton({super.key, required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = AppScope.colorsOf(context);
+    return Material(
+      color: c.danger.withOpacity(c.isDark ? 0.14 : 0.10),
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: onTap,
+        child: Container(
+          height: 54,
+          alignment: Alignment.center,
+          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            Icon(Icons.delete_outline, size: 21, color: c.danger),
+            const SizedBox(width: 8),
+            Text(label,
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: c.danger)),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
 class SheetFrame extends StatelessWidget {
   final String title;
   final List<Widget> children;
@@ -617,7 +637,11 @@ class SheetFrame extends StatelessWidget {
         ),
         Container(
           decoration: BoxDecoration(border: Border(top: BorderSide(color: c.line))),
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 22),
+          // The sheet runs to the very bottom of the screen, so the footer has
+          // to clear the system navigation bar itself — otherwise the last
+          // action in it sits under the back and home buttons. This goes to
+          // zero while the keyboard is up, which _sheet already pads for.
+          padding: EdgeInsets.fromLTRB(20, 12, 20, 22 + MediaQuery.of(context).padding.bottom),
           child: SizedBox(width: double.infinity, child: footer),
         ),
       ]),
