@@ -238,6 +238,9 @@ class _Fab extends StatelessWidget {
     final store = AppScope.of(context);
     final c = AppScope.colorsOf(context);
     final labels = ['New Thought', 'New Block', 'Add Task', 'Add Habit'];
+    // Settings has no button, but the Scaffold keeps rebuilding this one while
+    // it animates away, so the index has to survive a tab it never labels.
+    final tab = store.tab.clamp(0, labels.length - 1);
     final showLabel = store.tab != 1;
 
     void onPressed() {
@@ -268,7 +271,7 @@ class _Fab extends StatelessWidget {
       foregroundColor: c.accTxt,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       icon: const Icon(Icons.add, size: 26),
-      label: Text(labels[store.tab], style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w700)),
+      label: Text(labels[tab], style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w700)),
     );
   }
 }
@@ -296,7 +299,9 @@ class _BottomNav extends StatelessWidget {
                     store.selectedBlockId = null;
                   }),
                   behavior: HitTestBehavior.opaque,
-                  child: Column(children: [
+                  // Without this the column takes the whole height the Scaffold
+                  // offers the navigation bar, which squeezes the body to zero.
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
                     Container(
                       height: 32,
                       padding: const EdgeInsets.symmetric(horizontal: 18),
