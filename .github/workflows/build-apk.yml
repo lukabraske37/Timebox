@@ -103,6 +103,12 @@ jobs:
           EOF
 
       - run: flutter pub get
+
+      # Build 11 shipped a shell whose navigation bar ate the whole screen, and
+      # nothing in this workflow noticed. The layout tests fail on that, so run
+      # them before spending five minutes on a broken APK.
+      - run: flutter test
+
       - run: flutter build apk --release
 
       - name: Upload the APK

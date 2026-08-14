@@ -266,16 +266,25 @@ class _TimelineScreenState extends State<TimelineScreen> {
       child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         SizedBox(
           width: 56,
+          // Both stamps stay on one line: a wrapped "10:59 AM" would make the
+          // column taller than the block it labels.
           child: Column(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
             Text(fmtMins(shownStart, store.use24),
                 textAlign: TextAlign.right,
+                maxLines: 1,
+                softWrap: false,
+                overflow: TextOverflow.clip,
                 style: TextStyle(
                   fontSize: 12.5,
                   fontWeight: live ? FontWeight.w800 : FontWeight.w500,
                   color: live ? c.txt : c.txt2,
                 )),
             Text(fmtMins(shownStart + b.duration, store.use24),
-                textAlign: TextAlign.right, style: TextStyle(fontSize: 12.5, color: c.txt3)),
+                textAlign: TextAlign.right,
+                maxLines: 1,
+                softWrap: false,
+                overflow: TextOverflow.clip,
+                style: TextStyle(fontSize: 12.5, color: c.txt3)),
           ]),
         ),
         const SizedBox(width: 10),
@@ -362,7 +371,10 @@ class _TimelineScreenState extends State<TimelineScreen> {
                       ]),
                       const SizedBox(height: 2),
                       Text(b.title,
-                          maxLines: 2,
+                          // A block pinned to kMinNode only has room for the
+                          // duration line plus a single title line; a second
+                          // one would spill out of the card.
+                          maxLines: row.height >= 72 ? 2 : 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, letterSpacing: -0.2, color: c.txt)),
                     ]),
