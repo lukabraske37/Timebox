@@ -28,17 +28,22 @@ jobs:
       - name: Apply manifest permissions
         run: cp android_overrides/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
 
-      - name: Align Kotlin JVM target across all plugin subprojects
-        # Some plugins (e.g. flutter_timezone) still compile Kotlin against
-        # JVM target 1.8 while Flutter's generated build compiles Java
-        # against 11, which Gradle rejects as "Inconsistent JVM Target
-        # Compatibility". Force every subproject's Kotlin tasks to match.
+      - name: Pin every subproject to JVM target 17
+        # Plugins ship their own Java/Kotlin target (1.8 or 11) while the
+        # generated Flutter build compiles Java at 17, and Gradle rejects the
+        # mismatch as "Inconsistent JVM Target Compatibility". Pinning *both*
+        # compilers of every subproject to 17 keeps the two sides in step no
+        # matter what each plugin declares.
         run: |
           cat >> android/build.gradle.kts <<'EOF'
 
           subprojects {
               tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
-                  compilerOptions.jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
+                  compilerOptions.jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+              }
+              tasks.withType<JavaCompile>().configureEach {
+                  sourceCompatibility = JavaVersion.VERSION_17.toString()
+                  targetCompatibility = JavaVersion.VERSION_17.toString()
               }
           }
           EOF
