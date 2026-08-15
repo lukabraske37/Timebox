@@ -13,7 +13,7 @@ Everything stays on the phone. No account, no sign-up, no cloud, no analytics.
 
 ## Get the app
 
-**[Download the latest APK →](https://github.com/lukabraske37/app/releases/latest)**
+**[Download the latest APK →](https://github.com/lukabraske37/Timebox/releases/latest)**
 
 Open that link on your phone, tap `app-release.apk` under **Assets**, then open
 the file once it downloads. Android will ask you to allow installing apps from
@@ -61,6 +61,6 @@ flutter run
 
 The `android/` folder is generated rather than committed, which is why the first
 command is there. Every push builds a fresh APK and publishes it to
-[Releases](https://github.com/lukabraske37/app/releases).
+[Releases](https://github.com/lukabraske37/Timebox/releases).
 
 Built with Flutter.
