@@ -56,6 +56,10 @@ class _BlockSheetState extends State<_BlockSheet> {
   late List<String> _subtasks;
   bool _fine = false;
 
+  /// Drag distance not yet turned into a five-minute step. Keeping the leftover
+  /// is what makes the wheel follow the finger instead of jumping.
+  double _wheelPixels = 0;
+
   @override
   void initState() {
     super.initState();
@@ -314,11 +318,23 @@ class _BlockSheetState extends State<_BlockSheet> {
           ),
         );
 
+    // One five-minute step per this many pixels dragged.
+    const pixelsPerStep = 7.0;
+
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onVerticalDragStart: (_) => _wheelPixels = 0,
       onVerticalDragUpdate: (d) {
-        final steps = (-d.primaryDelta! / 3).round() * 5;
-        if (steps != 0) setState(() => _start = (_start + steps).clamp(0, 1425));
+        // Carry the leftover into the next event. Rounding each event on its
+        // own threw away anything under half a step and turned a steady drag
+        // into 5, 10 and 15 minute jumps that depended on the frame rate.
+        _wheelPixels -= d.primaryDelta!;
+        final steps = (_wheelPixels / pixelsPerStep).truncate();
+        if (steps == 0) return;
+        _wheelPixels -= steps * pixelsPerStep;
+        setState(() => _start = (_start + steps * 5).clamp(0, 1425));
       },
+      onVerticalDragEnd: (_) => _wheelPixels = 0,
       child: Column(children: [
         faded('${fmtMins(_start - 15, store.use24)} – ${fmtMins(_start, store.use24)}',
             () => setState(() => _start = (_start - 15).clamp(0, 1425))),
