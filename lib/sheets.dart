@@ -59,6 +59,7 @@ class _BlockSheetState extends State<_BlockSheet> {
   late List<String> _alerts;
   late List<String> _subtasks;
   bool _fine = false;
+  bool _longer = false;
 
   /// Drag distance not yet turned into a five-minute step. Keeping the leftover
   /// is what makes the wheel follow the finger instead of jumping.
@@ -171,7 +172,9 @@ class _BlockSheetState extends State<_BlockSheet> {
           ]),
         ],
         const SizedBox(height: 22),
-        FieldLabel('How long?'),
+        FieldLabel('How long?',
+            trailing: _longer ? 'Less…' : 'More…',
+            onTrailing: () => setState(() => _longer = !_longer)),
         const SizedBox(height: 12),
         Row(children: [
           for (var i = 0; i < kDurations.length; i++) ...[
@@ -186,6 +189,15 @@ class _BlockSheetState extends State<_BlockSheet> {
             ),
           ],
         ]),
+        if (_longer) ...[
+          const SizedBox(height: 12),
+          DurationPicker(minutes: _dur, onChanged: (v) => setState(() => _dur = v)),
+        ] else if (!kDurations.contains(_dur)) ...[
+          // A length picked on the wheel has no chip to light up, so name it.
+          const SizedBox(height: 10),
+          Text('Set to ${durLabel(_dur)}',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: c.acc)),
+        ],
         const SizedBox(height: 22),
         FieldLabel('What color?'),
         const SizedBox(height: 12),
@@ -401,6 +413,7 @@ class _SimpleSheetState extends State<_SimpleSheet> {
   late TextEditingController _title;
   late String _icon;
   int _dur = 30;
+  bool _longer = false;
   bool _reminder = false;
   int _time = 540;
 
@@ -515,7 +528,9 @@ class _SimpleSheetState extends State<_SimpleSheet> {
         ),
         if (widget.kind == _SimpleKind.inbox) ...[
           const SizedBox(height: 24),
-          FieldLabel('How long?'),
+          FieldLabel('How long?',
+              trailing: _longer ? 'Less…' : 'More…',
+              onTrailing: () => setState(() => _longer = !_longer)),
           const SizedBox(height: 12),
           Row(children: [
             for (var i = 0; i < kDurations.length; i++) ...[
@@ -530,6 +545,14 @@ class _SimpleSheetState extends State<_SimpleSheet> {
               ),
             ],
           ]),
+          if (_longer) ...[
+            const SizedBox(height: 12),
+            DurationPicker(minutes: _dur, onChanged: (v) => setState(() => _dur = v)),
+          ] else if (!kDurations.contains(_dur)) ...[
+            const SizedBox(height: 10),
+            Text('Set to ${durLabel(_dur)}',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: c.acc)),
+          ],
         ],
         if (widget.kind != _SimpleKind.inbox) ...[
           const SizedBox(height: 22),
@@ -738,6 +761,108 @@ class TitleField extends StatelessWidget {
 }
 
 /// Hour / minute stepper with AM-PM, used for every exact alarm time.
+/// Hours and minutes wheels for a length the preset row cannot express — the
+/// presets stop at an hour and a half, this reaches twelve hours.
+class DurationPicker extends StatefulWidget {
+  final int minutes;
+  final ValueChanged<int> onChanged;
+
+  const DurationPicker({super.key, required this.minutes, required this.onChanged});
+
+  static const int maxHours = 12;
+  static const int minuteStep = 5;
+
+  @override
+  State<DurationPicker> createState() => _DurationPickerState();
+}
+
+class _DurationPickerState extends State<DurationPicker> {
+  late FixedExtentScrollController _hours;
+  late FixedExtentScrollController _mins;
+
+  @override
+  void initState() {
+    super.initState();
+    _hours = FixedExtentScrollController(initialItem: widget.minutes ~/ 60);
+    _mins = FixedExtentScrollController(
+        initialItem: (widget.minutes % 60) ~/ DurationPicker.minuteStep);
+  }
+
+  @override
+  void didUpdateWidget(DurationPicker old) {
+    super.didUpdateWidget(old);
+    // A preset chip can change the length under us; follow it.
+    if (widget.minutes == old.minutes) return;
+    final h = widget.minutes ~/ 60;
+    final m = (widget.minutes % 60) ~/ DurationPicker.minuteStep;
+    if (_hours.selectedItem != h) _hours.jumpToItem(h);
+    if (_mins.selectedItem != m) _mins.jumpToItem(m);
+  }
+
+  @override
+  void dispose() {
+    _hours.dispose();
+    _mins.dispose();
+    super.dispose();
+  }
+
+  void _emit() {
+    final total = _hours.selectedItem * 60 + _mins.selectedItem * DurationPicker.minuteStep;
+    // Zero-length blocks would collapse on the timeline.
+    widget.onChanged(total < DurationPicker.minuteStep ? DurationPicker.minuteStep : total);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = AppScope.colorsOf(context);
+
+    Widget wheel(FixedExtentScrollController controller, int count, String Function(int) label) =>
+        Expanded(
+          child: ListWheelScrollView.useDelegate(
+            controller: controller,
+            itemExtent: 40,
+            physics: const FixedExtentScrollPhysics(),
+            onSelectedItemChanged: (_) => _emit(),
+            childDelegate: ListWheelChildBuilderDelegate(
+              childCount: count,
+              builder: (context, i) => Center(
+                child: Text(label(i),
+                    style: TextStyle(fontSize: 19, fontWeight: FontWeight.w700, color: c.txt)),
+              ),
+            ),
+          ),
+        );
+
+    return Container(
+      height: 168,
+      decoration: BoxDecoration(color: c.surf2, borderRadius: BorderRadius.circular(20)),
+      child: Stack(children: [
+        // The bar marking which row is selected sits under the wheels.
+        Center(
+          child: Container(
+            height: 40,
+            margin: const EdgeInsets.symmetric(horizontal: 16),
+            decoration: BoxDecoration(color: c.accTint, borderRadius: BorderRadius.circular(13)),
+          ),
+        ),
+        Row(children: [
+          wheel(_hours, DurationPicker.maxHours + 1, (i) => '$i'),
+          Padding(
+            padding: const EdgeInsets.only(right: 6),
+            child: Text('h', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: c.txt3)),
+          ),
+          wheel(_mins, 60 ~/ DurationPicker.minuteStep,
+              (i) => (i * DurationPicker.minuteStep).toString().padLeft(2, '0')),
+          Padding(
+            padding: const EdgeInsets.only(right: 16),
+            child: Text('m', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: c.txt3)),
+          ),
+        ]),
+      ]),
+    );
+  }
+}
+
 class TimeStepper extends StatelessWidget {
   final int minutes;
   final bool use24;
