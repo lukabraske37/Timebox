@@ -225,7 +225,11 @@ class Shell extends StatelessWidget {
       child: Scaffold(
         body: SafeArea(bottom: false, child: screens[store.tab]),
         bottomNavigationBar: _BottomNav(),
-        floatingActionButton: store.tab == 4 ? null : _Fab(),
+        // Selecting a block opens the timeline's action bar in the same corner,
+        // and the Scaffold draws this button over it, right on top of Edit.
+        // The action bar covers what you'd want here anyway, so step aside.
+        floatingActionButton:
+            store.tab == 4 || store.selectedBlockId != null ? null : _Fab(),
         backgroundColor: c.bg,
       ),
     );
