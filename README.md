@@ -1,71 +1,66 @@
 # Timebox
 
-Local-only day planner for Android: a proportional timeline you drag by five
-minutes, an Inbox of reusable blocks, tasks, habits with streaks, six themes and
-five accents. No account, no cloud, no analytics — everything lives on the phone.
+A day planner for Android. You lay the day out in blocks on a timeline, keep a
+list of tasks, and tick off habits to build streaks.
 
-Flutter port of the interactive prototype.
+Everything stays on the phone. No account, no sign-up, no cloud, no analytics.
 
-## Getting the APK without installing anything
+<p align="center">
+  <img src="docs/timeline.png" width="30%" alt="The day laid out as blocks on a timeline">
+  <img src="docs/inbox.png" width="30%" alt="Saved blocks ready to drop onto a day">
+  <img src="docs/habits.png" width="30%" alt="Habits with streaks">
+</p>
 
-Every push to `main` builds a release APK on GitHub:
+## Get the app
 
-1. Open the **Actions** tab of this repository.
-2. Pick the newest **Build APK** run.
-3. Download `timebox-apk` from **Artifacts** — or grab the APK from the
-   **Releases** page, where each build is attached automatically.
-4. Copy it to the phone and open it. Android will ask you to allow installing
-   from this source once.
+**[Download the latest APK →](https://github.com/lukabraske37/app/releases/latest)**
 
-The workflow generates the `android/` folder itself (`flutter create`), so no
-Gradle binaries are committed. `android_overrides/AndroidManifest.xml` is copied
-over the generated one to add the notification, exact-alarm and biometric
-permissions.
+Open that link on your phone, tap `app-release.apk` under **Assets**, then open
+the file once it downloads. Android will ask you to allow installing apps from
+this source — say yes, and that's it.
 
-## Building locally
+Allow notifications the first time you open it, otherwise reminders for blocks
+and habits won't come through.
+
+## What it does
+
+**Timeline.** The day is a vertical track and each block sits where it actually
+falls. An empty three-hour afternoon looks like three hours, so you can see the
+gaps rather than count them. Hold a block to pick it up and drag it to a new
+time; tap it to nudge the start or the length in small steps.
+
+**Inbox.** The things you plan over and over — gym, walk the dog, school run —
+live here with their usual length. One tap drops any of them onto the day.
+
+**Tasks.** A plain list for the things that just need doing, each with an
+optional reminder.
+
+**Habits.** Tick them off daily and watch the streak grow. Charts show the last
+five weeks up to a full year.
+
+**Reminders.** Alerts when a block starts or ends, or 15 minutes / half an hour /
+an hour before. Tasks and habits get their own, plus one optional summary of the
+day.
+
+**Make it yours.** Six themes, five accent colours, 12- or 24-hour clock, and a
+fingerprint lock if you want one.
+
+**Your data is yours.** Export everything to a single file you keep, and load it
+back whenever you like.
+
+## Build it yourself
+
+You need [Flutter](https://docs.flutter.dev/get-started/install).
 
 ```bash
 flutter create --platforms=android --org com.timebox --project-name timebox .
 cp android_overrides/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
 flutter pub get
-flutter run            # or: flutter build apk --release
+flutter run
 ```
 
-`minSdk` must be 23 or higher for biometrics, and `MainActivity` must extend
-`FlutterFragmentActivity` (the workflow does both automatically).
+The `android/` folder is generated rather than committed, which is why the first
+command is there. Every push builds a fresh APK and publishes it to
+[Releases](https://github.com/lukabraske37/app/releases).
 
-## What lives where
-
-| Area | File |
-| --- | --- |
-| App shell, onboarding, lock screen, bottom nav | `lib/main.dart` |
-| State, persistence, day roll-forward, timeline layout | `lib/store.dart` |
-| Data classes and time formatting | `lib/models.dart` |
-| Six themes, five accents, block colours | `lib/theme.dart` |
-| Shared widgets (panels, switches, segmented, pills) | `lib/ui.dart` |
-| Notifications, biometrics, JSON backup | `lib/services.dart` |
-| Block / task / habit editors, icon picker, time stepper | `lib/sheets.dart` |
-| Proportional timeline, drag, action bar | `lib/screens/timeline.dart` |
-| Inbox, tasks, habits + stats, settings | `lib/screens/*.dart` |
-
-## How the timeline works
-
-Empty time takes real height: one minute is a fixed number of pixels, so a
-three-hour gap looks like three hours. Long-press a block to pick it up — it
-moves in five-minute steps and a badge shows the offset (`+45m → 9:45 AM`);
-drop it on the bin to delete. A short tap selects it and opens the action bar
-with `−15 / −5 / +5 / +15` for both the start time and the length.
-
-Settings → Timeline switches to a classic evenly-spaced list, and
-"Hours on screen" changes the zoom.
-
-## Real Android behaviour
-
-- **Notifications** — block alerts (at start, at end, 15m/30m/1h before), task
-  reminders, daily habit nudges and one optional daily summary, all scheduled as
-  exact alarms and rebuilt whenever the plan changes.
-- **Biometric lock** — optional fingerprint or face unlock on launch.
-- **Backup** — export the whole state as one JSON file you keep yourself, and
-  restore it from any file.
-- **Day roll-forward** — the plan carries to the new day, whether the app was
-  closed for a week or left open past midnight.
+Built with Flutter.
