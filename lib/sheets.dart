@@ -25,8 +25,12 @@ Future<void> _sheet(BuildContext context, Widget child) {
     backgroundColor: c.surf,
     barrierColor: Colors.black.withOpacity(0.55),
     shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
-    builder: (_) => Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+    // Read the keyboard inset from the sheet's own context. Reading it from the
+    // caller's froze it at whatever it was when the sheet opened — always zero,
+    // since the title field autofocuses a moment later — so the sheet sat still
+    // while the keyboard rose over the field being typed into.
+    builder: (sheetContext) => Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(sheetContext).viewInsets.bottom),
       child: child,
     ),
   );
