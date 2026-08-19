@@ -1,6 +1,9 @@
 /// Plain data + the small helpers every screen shares.
 library;
 
+/// Separates a repeating block's id from the date it was cast onto.
+const String kOccurrenceMark = '@';
+
 String dateKey(DateTime d) =>
     '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
@@ -45,6 +48,10 @@ class Block {
   List<String> alerts;
   List<String> subtasks;
 
+  /// Dates this block repeats onto but should not appear on, because the user
+  /// changed or removed that one occurrence.
+  List<String> skips;
+
   Block({
     required this.id,
     required this.date,
@@ -56,10 +63,33 @@ class Block {
     this.repeat = 'Once',
     List<String>? alerts,
     List<String>? subtasks,
+    List<String>? skips,
   })  : alerts = alerts ?? <String>[],
-        subtasks = subtasks ?? <String>[];
+        subtasks = subtasks ?? <String>[],
+        skips = skips ?? <String>[];
 
   int get duration => end - start;
+
+  /// True for the copies a repeating block casts onto later days. They are
+  /// built on the fly and are not in the stored list.
+  bool get isOccurrence => id.contains(kOccurrenceMark);
+
+  /// The id of the block a copy came from.
+  String get seriesId => id.split(kOccurrenceMark).first;
+
+  /// The copy this block casts onto [key].
+  Block occurrenceOn(String key) => Block(
+        id: '$id$kOccurrenceMark$key',
+        date: key,
+        icon: icon,
+        title: title,
+        start: start,
+        end: end,
+        color: color,
+        repeat: repeat,
+        alerts: List.of(alerts),
+        subtasks: List.of(subtasks),
+      );
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -72,6 +102,7 @@ class Block {
         'repeat': repeat,
         'alerts': alerts,
         'subtasks': subtasks,
+        'skips': skips,
       };
 
   static Block fromJson(Map<String, dynamic> j) => Block(
@@ -85,6 +116,7 @@ class Block {
         repeat: j['repeat'] as String? ?? 'Once',
         alerts: (j['alerts'] as List?)?.map((e) => e.toString()).toList(),
         subtasks: (j['subtasks'] as List?)?.map((e) => e.toString()).toList(),
+        skips: (j['skips'] as List?)?.map((e) => e.toString()).toList(),
       );
 }
 
