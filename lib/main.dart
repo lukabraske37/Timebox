@@ -24,19 +24,29 @@ class TimeboxApp extends StatefulWidget {
   State<TimeboxApp> createState() => _TimeboxAppState();
 }
 
-class _TimeboxAppState extends State<TimeboxApp> {
+class _TimeboxAppState extends State<TimeboxApp> with WidgetsBindingObserver {
   final store = Store();
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     store.load();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     store.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Android freezes the process while the app is away, so the clock the store
+    // keeps can come back stale — check the date on the way in rather than
+    // waiting for the next tick.
+    if (state == AppLifecycleState.resumed) store.syncToToday();
   }
 
   @override

@@ -29,6 +29,10 @@ falls. An empty three-hour afternoon looks like three hours, so you can see the
 gaps rather than count them. Hold a block to pick it up and drag it to a new
 time; tap it to nudge the start or the length in small steps.
 
+Blocks stay on the day you put them on, and a block set to repeat comes back
+daily, weekly or monthly. Change or drop one of those days and the rest of the
+series carries on untouched.
+
 **Inbox.** The things you plan over and over — gym, walk the dog, school run —
 live here with their usual length. One tap drops any of them onto the day.
 

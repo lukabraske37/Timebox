@@ -66,7 +66,10 @@ class Store extends ChangeNotifier {
   bool dailySummary = false;
   int summaryTime = 1260;
   String habitRange = '5w';
-  String seedDate = todayKey();
+
+  /// The calendar day the view is anchored to, so a day change can be told
+  /// apart from the user simply browsing to another date.
+  String _viewDay = todayKey();
 
   Timer? _tick;
   Timer? _saveTimer;
@@ -79,8 +82,11 @@ class Store extends ChangeNotifier {
   double get ppm => kZoom[zoom] ?? 0.85;
   String get selectedKey => dateKey(selected);
   bool get selectedIsToday => selectedKey == todayKey();
-  Block? get selectedBlock =>
-      selectedBlockId == null ? null : blocks.firstWhereOrNull((b) => b.id == selectedBlockId);
+  /// Occurrences of a repeating block are built per day and are not in the
+  /// stored list, so look through what the selected day actually shows.
+  Block? get selectedBlock => selectedBlockId == null
+      ? null
+      : blocksOn(selectedKey).firstWhereOrNull((b) => b.id == selectedBlockId);
 
   // ---------- lifecycle ----------
 
@@ -96,7 +102,8 @@ class Store extends ChangeNotifier {
         _seedDemo();
       }
     }
-    _rollForward();
+    _viewDay = todayKey();
+    selected = DateTime.now();
     locked = booted && biometric;
     _tick = Timer.periodic(const Duration(seconds: 20), (_) => _onTick());
     notifyListeners();
@@ -112,30 +119,24 @@ class Store extends ChangeNotifier {
   }
 
   void _onTick() {
-    final n = nowMinutes();
-    if (n == now) return;
-    final crossedMidnight = n < now;
-    now = n;
-    if (crossedMidnight) {
-      _rollForward();
-      selected = DateTime.now();
-      weekOffset = 0;
-    }
-    notifyListeners();
+    if (nowMinutes() == now && todayKey() == _viewDay) return;
+    syncToToday();
   }
 
-  /// Carries the whole plan forward by however many days have passed, so the
-  /// timeline is never empty just because the app sat unopened.
-  void _rollForward() {
+  /// Follows the clock onto the new day — at midnight with the app open, and
+  /// when it comes back after being away. Browsing to another date on the same
+  /// day is left alone: only a real change of date moves the view.
+  void syncToToday() {
+    now = nowMinutes();
     final today = todayKey();
-    if (seedDate == today) return;
-    final days = keyToDate(today).difference(keyToDate(seedDate)).inDays;
-    if (days > 0) {
-      for (final b in blocks) {
-        b.date = dateKey(keyToDate(b.date).add(Duration(days: days)));
-      }
+    if (today != _viewDay) {
+      _viewDay = today;
+      selected = DateTime.now();
+      weekOffset = 0;
+      selectedBlockId = null;
+      _syncNotifications();
     }
-    seedDate = today;
+    notifyListeners();
   }
 
   // ---------- persistence ----------
@@ -162,7 +163,6 @@ class Store extends ChangeNotifier {
         'dailySummary': dailySummary,
         'summaryTime': summaryTime,
         'habitRange': habitRange,
-        'seedDate': seedDate,
       };
 
   void _fromJson(Map<String, dynamic> j) {
@@ -186,7 +186,6 @@ class Store extends ChangeNotifier {
     dailySummary = j['dailySummary'] as bool? ?? false;
     summaryTime = (j['summaryTime'] as num?)?.toInt() ?? 1260;
     habitRange = j['habitRange'] as String? ?? '5w';
-    seedDate = j['seedDate'] as String? ?? todayKey();
     if (blocks.isEmpty && inbox.isEmpty && tasks.isEmpty && habits.isEmpty) _seedDemo();
   }
 
@@ -199,8 +198,14 @@ class Store extends ChangeNotifier {
   }
 
   void _syncNotifications() {
+    // Repeating blocks only exist as copies on the days they land on, so hand
+    // the scheduler the next few days as they are actually planned.
+    final upcoming = <Block>[];
+    for (var i = 0; i < 8; i++) {
+      upcoming.addAll(blocksOn(dateKey(DateTime.now().add(Duration(days: i)))));
+    }
     Notifications.sync(
-      blocks: blocks,
+      blocks: upcoming,
       tasks: tasks,
       habits: habits,
       blocksOn: notifBlocks,
@@ -220,7 +225,7 @@ class Store extends ChangeNotifier {
 
   Future<void> restore(Map<String, dynamic> data) async {
     _fromJson(data);
-    _rollForward();
+    _viewDay = todayKey();
     booted = true;
     notifyListeners();
     save();
@@ -246,10 +251,55 @@ class Store extends ChangeNotifier {
 
   List<DateTime> get weekDays => List.generate(7, (i) => weekStart.add(Duration(days: i)));
 
+  /// Everything planned for [key]: the blocks actually filed on that date,
+  /// plus the copies any repeating block casts forward onto it.
   List<Block> blocksOn(String key) {
-    final list = blocks.where((b) => b.date == key).toList();
+    final day = keyToDate(key);
+    final list = <Block>[];
+    for (final b in blocks) {
+      if (b.date == key) {
+        list.add(b);
+      } else if (_repeatsOnto(b, key, day)) {
+        list.add(b.occurrenceOn(key));
+      }
+    }
     list.sort((a, b) => a.start == b.start ? a.end.compareTo(b.end) : a.start.compareTo(b.start));
     return list;
+  }
+
+  bool _repeatsOnto(Block b, String key, DateTime day) {
+    if (b.repeat == 'Once' || b.skips.contains(key)) return false;
+    final from = keyToDate(b.date);
+    if (!day.isAfter(from)) return false;
+    switch (b.repeat) {
+      case 'Daily':
+        return true;
+      case 'Weekly':
+        return day.difference(from).inDays % 7 == 0;
+      case 'Monthly':
+        return day.day == from.day;
+      default:
+        return false;
+    }
+  }
+
+  /// A repeating block shows up on later days as a copy that is not in the
+  /// stored list. Changing one of those has to leave the rest of the series
+  /// alone, so the copy becomes a block of its own for that day and the series
+  /// is told to skip that date.
+  Block? _detach(String id) {
+    if (!id.contains(kOccurrenceMark)) return blocks.firstWhereOrNull((b) => b.id == id);
+    final parts = id.split(kOccurrenceMark);
+    final origin = blocks.firstWhereOrNull((b) => b.id == parts.first);
+    if (origin == null) return null;
+    final key = parts.last;
+    if (!origin.skips.contains(key)) origin.skips.add(key);
+    final copy = origin.occurrenceOn(key)
+      ..id = _id()
+      ..repeat = 'Once';
+    blocks.add(copy);
+    if (selectedBlockId == id) selectedBlockId = copy.id;
+    return copy;
   }
 
   int nextFreeStart() {
@@ -313,7 +363,7 @@ class Store extends ChangeNotifier {
   String _id() => DateTime.now().microsecondsSinceEpoch.toString();
 
   void moveBlock(String id, int minutes) => mutate(() {
-        final b = blocks.firstWhereOrNull((x) => x.id == id);
+        final b = _detach(id);
         if (b == null) return;
         final dur = b.duration;
         final start = (b.start + minutes).clamp(0, 1440 - dur);
@@ -322,19 +372,40 @@ class Store extends ChangeNotifier {
       });
 
   void stretchBlock(String id, int minutes) => mutate(() {
-        final b = blocks.firstWhereOrNull((x) => x.id == id);
+        final b = _detach(id);
         if (b == null) return;
         b.end = (b.end + minutes).clamp(b.start + 5, 1440);
       });
 
   void deleteBlock(String id) => mutate(() {
-        blocks.removeWhere((b) => b.id == id);
+        if (id.contains(kOccurrenceMark)) {
+          // Dropping one occurrence only takes that day out of the series.
+          final parts = id.split(kOccurrenceMark);
+          final origin = blocks.firstWhereOrNull((b) => b.id == parts.first);
+          if (origin != null && !origin.skips.contains(parts.last)) {
+            origin.skips.add(parts.last);
+          }
+        } else {
+          blocks.removeWhere((b) => b.id == id);
+        }
         if (selectedBlockId == id) selectedBlockId = null;
       });
 
   void addBlock(Block b) => mutate(() => blocks.add(b));
 
   void replaceBlock(Block b) => mutate(() {
+        if (b.id.contains(kOccurrenceMark)) {
+          final parts = b.id.split(kOccurrenceMark);
+          final origin = blocks.firstWhereOrNull((x) => x.id == parts.first);
+          if (origin != null && !origin.skips.contains(parts.last)) {
+            origin.skips.add(parts.last);
+          }
+          b.id = _id();
+          b.repeat = 'Once';
+          blocks.add(b);
+          if (selectedBlockId != null) selectedBlockId = b.id;
+          return;
+        }
         final i = blocks.indexWhere((x) => x.id == b.id);
         if (i >= 0) blocks[i] = b;
       });
@@ -392,7 +463,6 @@ class Store extends ChangeNotifier {
   void _seedDemo() {
     final today = todayKey();
     final tomorrow = dateKey(DateTime.now().add(const Duration(days: 1)));
-    seedDate = today;
     blocks = [
       Block(id: 'b1', date: today, icon: 'directions_run', title: 'Morning run', start: 420, end: 465, repeat: 'Daily', alerts: ['At start of task']),
       Block(id: 'b2', date: today, icon: 'laptop_mac', title: 'Deep work: pricing page', start: 540, end: 630, alerts: ['At start of task']),
