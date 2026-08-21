@@ -201,21 +201,46 @@ class _TimelineScreenState extends State<TimelineScreen> {
       ),
     ];
 
-    if (store.selectedIsToday && !store.classicTimeline) {
-      final past = ((store.now - layout.origin) * layout.ppm).clamp(0, layout.trackHeight).toDouble();
+    // The rail goes solid for exactly as long as a block runs, so you can read
+    // a block's span off the line itself. What stays dashed in between is the
+    // free time. Filling the whole rail up to now, as this used to, flattened
+    // both into one unbroken line.
+    final palette = c.isDark ? kBlockColorsDark : kBlockColorsLight;
+    for (final row in layout.rows) {
       children.add(Positioned(
         left: 83,
-        top: 0,
+        top: row.y,
         width: 5,
-        height: past,
+        height: row.height,
         child: DecoratedBox(
-          decoration: BoxDecoration(color: c.acc, borderRadius: BorderRadius.circular(3)),
+          decoration: BoxDecoration(
+            color: store.blockColorIcons ? palette[row.block.color % palette.length] : c.acc,
+            borderRadius: BorderRadius.circular(3),
+          ),
         ),
       ));
     }
 
     for (final row in layout.rows) {
       children.add(_row(store, c, layout, row));
+    }
+
+    // Say how long each pause actually is, where the gap is tall enough to read.
+    if (!store.classicTimeline) {
+      for (var i = 1; i < layout.rows.length; i++) {
+        final prev = layout.rows[i - 1];
+        final next = layout.rows[i];
+        final free = next.block.start - prev.block.end;
+        final top = prev.y + prev.height;
+        final gap = next.y - top;
+        if (free <= 0 || gap < 34) continue;
+        children.add(Positioned(
+          left: 100,
+          top: top + gap / 2 - 9,
+          child: Text('${durLabel(free)} free',
+              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: c.txt3)),
+        ));
+      }
     }
 
     if (store.selectedIsToday && !store.classicTimeline && store.now >= layout.origin && store.now <= layout.last + 30) {
