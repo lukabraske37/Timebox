@@ -50,6 +50,7 @@ void main() {
   });
 
   zoomTests();
+  taskOrderTests();
 
   test('the day summary counts what is planned and what is free', () {
     final tomorrow = DateTime.now().add(const Duration(days: 1));
@@ -84,5 +85,27 @@ void zoomTests() {
 
     expect(loose, greaterThan(tight * 2),
         reason: 'the loosest zoom should show far less of the day at once');
+  });
+}
+
+/// Finished tasks used to hold their place in the list, pushing what is still
+/// open further down as the day went on.
+void taskOrderTests() {
+  test('finished tasks sink below the open ones', () {
+    final s = Store();
+    s.tasks = [
+      Task(id: '1', title: 'done first', done: true),
+      Task(id: '2', title: 'still open'),
+      Task(id: '3', title: 'also done', done: true),
+      Task(id: '4', title: 'open too'),
+    ];
+
+    final ordered = [
+      ...s.tasks.where((t) => !t.done),
+      ...s.tasks.where((t) => t.done),
+    ];
+
+    expect(ordered.map((t) => t.title),
+        ['still open', 'open too', 'done first', 'also done']);
   });
 }

@@ -12,11 +12,22 @@ class TasksScreen extends StatelessWidget {
     final store = AppScope.of(context);
     final c = AppScope.colorsOf(context);
     final done = store.tasks.where((t) => t.done).length;
+    final left = store.tasks.length - done;
+    // Finished tasks sink to the bottom so what is still open stays in reach.
+    final ordered = [
+      ...store.tasks.where((t) => !t.done),
+      ...store.tasks.where((t) => t.done),
+    ];
 
     return Column(children: [
       ScreenTitle(
         title: 'Tasks',
-        subtitle: '$done completed',
+        subtitle: store.tasks.isEmpty
+            ? 'Nothing to do'
+            : [
+                if (left > 0) '$left left',
+                if (done > 0) '$done done',
+              ].join(' · '),
         trailing: GestureDetector(
           onTap: () => _confirmClear(context, done),
           child: Container(
@@ -38,10 +49,10 @@ class TasksScreen extends StatelessWidget {
               )
             : ListView.separated(
                 padding: const EdgeInsets.fromLTRB(18, 6, 18, 120),
-                itemCount: store.tasks.length,
+                itemCount: ordered.length,
                 separatorBuilder: (_, __) => const SizedBox(height: 10),
                 itemBuilder: (context, i) {
-                  final t = store.tasks[i];
+                  final t = ordered[i];
                   return Panel(
                     radius: 16,
                     padding: const EdgeInsets.all(13),
