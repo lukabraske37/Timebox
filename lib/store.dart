@@ -336,9 +336,12 @@ class Store extends ChangeNotifier {
       for (final b in list) {
         if (b.end > start) start = b.end;
       }
+      // A one minute block ending at 9:01 would otherwise hand the next block
+      // 9:01, and every five minute step from there keeps the stray minute.
+      start = snapUpToStep(start);
     }
     if (selectedIsToday) {
-      final soon = ((now + 4) ~/ 5) * 5;
+      final soon = snapUpToStep(now);
       if (soon > start) start = soon;
     }
     return start.clamp(0, 1435);
@@ -403,7 +406,8 @@ class Store extends ChangeNotifier {
         final b = _detach(id);
         if (b == null) return;
         final dur = b.duration;
-        final start = (b.start + minutes).clamp(0, 1440 - dur);
+        // Snapping here also heals a block already sitting off the grid.
+        final start = snapToStep(b.start + minutes).clamp(0, 1440 - dur);
         b.start = start;
         b.end = start + dur;
       });
@@ -411,7 +415,7 @@ class Store extends ChangeNotifier {
   void stretchBlock(String id, int minutes) => mutate(() {
         final b = _detach(id);
         if (b == null) return;
-        b.end = (b.end + minutes).clamp(b.start + 5, 1440);
+        b.end = snapToStep(b.end + minutes).clamp(b.start + kStep, 1440);
       });
 
   void deleteBlock(String id) => mutate(() {

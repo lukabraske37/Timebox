@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timebox/models.dart';
+import 'package:timebox/sheets.dart';
 import 'package:timebox/store.dart';
 
 /// A new block should land after whatever is already planned, so one follows
@@ -28,7 +29,8 @@ void main() {
     // 6:30 to 6:31, the way you would block out waking up.
     final s = storeOn(tomorrow, [block('sleep', tomorrow, 390, 391)]);
 
-    expect(s.nextFreeStart(), 391, reason: 'the next block should carry on at 6:31');
+    expect(s.nextFreeStart(), 395,
+        reason: 'it carries on right after, rounded onto the five minute grid');
   });
 
   test('the last end wins even when a later block is shorter', () {
@@ -51,6 +53,7 @@ void main() {
 
   zoomTests();
   taskOrderTests();
+  gridTests();
 
   test('the day summary counts what is planned and what is free', () {
     final tomorrow = DateTime.now().add(const Duration(days: 1));
@@ -107,5 +110,51 @@ void taskOrderTests() {
 
     expect(ordered.map((t) => t.title),
         ['still open', 'open too', 'done first', 'also done']);
+  });
+}
+
+/// Everything moves in five minute steps, so a start that falls off that grid
+/// can never be brought back onto it — every step keeps the stray minute. A one
+/// minute block at 9:00 used to hand the next one 9:01, and from there the
+/// wheel could only offer 9:06, 9:11, 9:16.
+void gridTests() {
+  test('a stray minute never reaches the grid by stepping', () {
+    var start = 541; // 9:01
+    for (var i = 0; i < 20; i++) {
+      start += kStep;
+    }
+    expect(start % kStep, 1, reason: 'this is the trap the snapping removes');
+  });
+
+  test('the next block after a one minute block starts on the grid', () {
+    final tomorrow = DateTime.now().add(const Duration(days: 1));
+    final s = Store()..selected = tomorrow;
+    s.blocks = [
+      Block(id: 'a', date: dateKey(tomorrow), icon: 'label', title: 'a', start: 540, end: 541),
+    ];
+
+    final next = s.nextFreeStart();
+    expect(next, 545, reason: '9:01 rounds up to 9:05');
+    expect(next % kStep, 0);
+  });
+
+  test('nudging a block off the grid pulls it back on', () {
+    final tomorrow = DateTime.now().add(const Duration(days: 1));
+    final s = Store()..selected = tomorrow;
+    s.blocks = [
+      Block(id: 'a', date: dateKey(tomorrow), icon: 'label', title: 'a', start: 541, end: 601),
+    ];
+
+    s.moveBlock('a', 15);
+
+    final b = s.blocks.single;
+    expect(b.start % kStep, 0, reason: 'the nudge should heal the stray minute');
+    expect(b.duration, 60, reason: 'and leave the length alone');
+  });
+
+  test('every duration preset sits on the grid', () {
+    for (final d in kDurations) {
+      expect(d % kStep, 0, reason: '$d cannot be reached by the wheels');
+    }
   });
 }
