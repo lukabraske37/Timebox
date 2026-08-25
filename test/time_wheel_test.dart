@@ -16,6 +16,9 @@ void main() {
   /// returns the range shown on the wheel afterwards.
   Future<String> dragWheel(WidgetTester tester,
       {required int events, double total = 140}) async {
+    // Tear the previous tree down first: pumping a second app of the same shape
+    // reuses the sheet's element, and its start time would carry over.
+    await tester.pumpWidget(const SizedBox());
     SharedPreferences.setMockInitialValues({});
     tester.view.physicalSize = const Size(1440, 3200);
     tester.view.devicePixelRatio = 3.5;

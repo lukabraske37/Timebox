@@ -74,6 +74,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
                   style: TextStyle(fontSize: 29, fontWeight: FontWeight.w800, letterSpacing: -0.6, color: c.txt)),
               const SizedBox(height: 3),
               Text(dayLabel(store, store.selected), style: TextStyle(fontSize: 13.5, color: c.txt2)),
+              _daySummary(store, c),
             ]),
           ),
           _weekArrow(c, Icons.chevron_left, () => store.mutate(() => store.weekOffset--)),
@@ -100,6 +101,23 @@ class _TimelineScreenState extends State<TimelineScreen> {
           ],
         ),
       ]),
+    );
+  }
+
+  /// A line under the date saying how the day stands, so its shape is legible
+  /// before scrolling through it.
+  Widget _daySummary(Store store, AppColors c) {
+    final s = store.daySummary();
+    if (s.count == 0) return const SizedBox.shrink();
+    final parts = [
+      '${s.count} ${s.count == 1 ? 'block' : 'blocks'}',
+      '${durLabel(s.planned)} planned',
+      if (s.free > 0) '${durLabel(s.free)} free',
+    ];
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Text(parts.join(' · '),
+          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: c.txt3)),
     );
   }
 
@@ -233,12 +251,33 @@ class _TimelineScreenState extends State<TimelineScreen> {
         final free = next.block.start - prev.block.end;
         final top = prev.y + prev.height;
         final gap = next.y - top;
-        if (free <= 0 || gap < 34) continue;
+        // Judge by the free time itself. Stretching a short block to stay
+        // readable eats into the pixels after it, so a real pause can end up
+        // with almost none left — say it anyway, as long as it can be read.
+        if (free <= 0 || gap < 16) continue;
         children.add(Positioned(
-          left: 100,
-          top: top + gap / 2 - 9,
-          child: Text('${durLabel(free)} free',
-              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: c.txt3)),
+          left: 96,
+          right: 0,
+          top: top,
+          height: gap,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            // Tapping empty time is the quickest way to plan into it: the sheet
+            // opens already set to this slot, start and length both.
+            onTap: () => openBlockSheet(context,
+                startAt: prev.block.end, fill: free.clamp(5, 720)),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Text('${durLabel(free)} free',
+                    style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: c.txt3)),
+                if (gap >= 34) ...[
+                  const SizedBox(width: 6),
+                  Icon(Icons.add_circle_outline, size: 13, color: c.txt3),
+                ],
+              ]),
+            ),
+          ),
         ));
       }
     }
@@ -356,6 +395,9 @@ class _TimelineScreenState extends State<TimelineScreen> {
             child: Stack(clipBehavior: Clip.none, children: [
               Container(
                 decoration: BoxDecoration(
+                  color: store.blockColorIcons
+                      ? iconColor.withOpacity(c.isDark ? 0.13 : 0.10)
+                      : c.surf,
                   borderRadius: BorderRadius.circular(28),
                   border: isSelected ? Border.all(color: c.acc, width: 2) : null,
                   boxShadow: isDragged

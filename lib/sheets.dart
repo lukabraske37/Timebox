@@ -38,12 +38,16 @@ Future<void> _sheet(BuildContext context, Widget child) {
 
 // ---------------------------------------------------------------- block editor
 
-Future<void> openBlockSheet(BuildContext context, {Block? existing}) =>
-    _sheet(context, _BlockSheet(existing: existing));
+/// [startAt] and [fill] pre-load the sheet for a slot the user tapped, so a
+/// gap on the timeline can be turned into a block without setting the time.
+Future<void> openBlockSheet(BuildContext context, {Block? existing, int? startAt, int? fill}) =>
+    _sheet(context, _BlockSheet(existing: existing, startAt: startAt, fill: fill));
 
 class _BlockSheet extends StatefulWidget {
   final Block? existing;
-  const _BlockSheet({this.existing});
+  final int? startAt;
+  final int? fill;
+  const _BlockSheet({this.existing, this.startAt, this.fill});
 
   @override
   State<_BlockSheet> createState() => _BlockSheetState();
@@ -76,13 +80,20 @@ class _BlockSheetState extends State<_BlockSheet> {
     _repeat = b?.repeat ?? 'Once';
     _alerts = List.of(b?.alerts ?? const ['At start of task']);
     _subtasks = List.of(b?.subtasks ?? const []);
-    _start = b?.start ?? 540;
+    _start = b?.start ?? widget.startAt ?? 540;
+    if (b == null && widget.fill != null) _dur = widget.fill!;
   }
+
+  bool _startPicked = false;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (widget.existing == null) {
+    // AppScope rebuilds on every store notification, the clock tick included,
+    // so this runs again and again while the sheet is open. Only the first pass
+    // may choose a start time — after that it is the user's.
+    if (widget.existing == null && widget.startAt == null && !_startPicked) {
+      _startPicked = true;
       _start = AppScope.of(context).nextFreeStart();
     }
   }
