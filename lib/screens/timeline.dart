@@ -183,20 +183,24 @@ class _TimelineScreenState extends State<TimelineScreen> {
           icon: Icons.event_available,
           title: 'Nothing planned',
           body: 'Add a block, or send something over from the Inbox.',
+          // This used to offer to fill the day with the example plan, which
+          // replaces every block, task and habit the app holds — on any day
+          // that happens to be empty. Resetting belongs in Settings; from here
+          // the useful thing is to start planning this day.
           action: Material(
             color: c.accTint,
             borderRadius: BorderRadius.circular(23),
             child: InkWell(
               borderRadius: BorderRadius.circular(23),
-              onTap: () => store.resetDemo(),
+              onTap: () => openBlockSheet(context),
               child: Container(
                 height: 46,
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 alignment: Alignment.center,
                 child: Row(children: [
-                  Icon(Icons.auto_awesome, size: 19, color: c.acc),
+                  Icon(Icons.add_circle_outline, size: 19, color: c.acc),
                   const SizedBox(width: 8),
-                  Text('Fill with an example day',
+                  Text('Plan a block',
                       style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: c.acc)),
                 ]),
               ),

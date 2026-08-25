@@ -1,6 +1,17 @@
 /// Plain data + the small helpers every screen shares.
 library;
 
+/// Times move in five minute steps everywhere — the wheels, the steppers, the
+/// nudges on the action bar. A start that falls off that grid can never be
+/// brought back onto it, since every step keeps the same remainder.
+const int kStep = 5;
+
+/// The nearest five minute mark.
+int snapToStep(int minutes) => ((minutes + kStep ~/ 2) ~/ kStep) * kStep;
+
+/// The next five minute mark at or after [minutes].
+int snapUpToStep(int minutes) => ((minutes + kStep - 1) ~/ kStep) * kStep;
+
 /// Separates a repeating block's id from the date it was cast onto.
 const String kOccurrenceMark = '@';
 

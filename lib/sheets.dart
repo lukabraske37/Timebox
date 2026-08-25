@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'icons.dart';
 import 'main.dart';
@@ -7,7 +8,10 @@ import 'store.dart';
 import 'theme.dart';
 import 'ui.dart';
 
-const List<int> kDurations = [1, 15, 30, 45, 60, 90];
+// Five minutes is the smallest step the wheels and steppers can express, so
+// the shortest preset matches it rather than offering a length nothing else in
+// the app can reach.
+const List<int> kDurations = [5, 15, 30, 45, 60, 90];
 const List<String> kRepeats = ['Once', 'Daily', 'Weekly', 'Monthly'];
 const List<String> kAlertPool = [
   'At start of task',
@@ -177,9 +181,11 @@ class _BlockSheetState extends State<_BlockSheet> {
         if (_fine) ...[
           const SizedBox(height: 12),
           Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-            _tinyStep(c, '− 5 min', () => setState(() => _start = (_start - 5).clamp(0, 1435))),
+            _tinyStep(c, '− 5 min',
+                () => setState(() => _start = snapToStep(_start - kStep).clamp(0, 1435))),
             const SizedBox(width: 12),
-            _tinyStep(c, '+ 5 min', () => setState(() => _start = (_start + 5).clamp(0, 1435))),
+            _tinyStep(c, '+ 5 min',
+                () => setState(() => _start = snapToStep(_start + kStep).clamp(0, 1435))),
           ]),
         ],
         const SizedBox(height: 22),
@@ -359,12 +365,13 @@ class _BlockSheetState extends State<_BlockSheet> {
         final steps = (_wheelPixels / pixelsPerStep).truncate();
         if (steps == 0) return;
         _wheelPixels -= steps * pixelsPerStep;
-        setState(() => _start = (_start + steps * 5).clamp(0, 1425));
+        HapticFeedback.selectionClick();
+        setState(() => _start = snapToStep(_start + steps * kStep).clamp(0, 1425));
       },
       onVerticalDragEnd: (_) => _wheelPixels = 0,
       child: Column(children: [
         faded('${fmtMins(_start - 15, store.use24)} – ${fmtMins(_start, store.use24)}',
-            () => setState(() => _start = (_start - 15).clamp(0, 1425))),
+            () => setState(() => _start = snapToStep(_start - 15).clamp(0, 1425))),
         Container(
           height: 48,
           padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -375,7 +382,7 @@ class _BlockSheetState extends State<_BlockSheet> {
         ),
         faded(
             '${fmtMins(_start + _dur, store.use24)} – ${fmtMins(_start + _dur + 15, store.use24)}',
-            () => setState(() => _start = (_start + 15).clamp(0, 1425))),
+            () => setState(() => _start = snapToStep(_start + 15).clamp(0, 1425))),
         const SizedBox(height: 8),
         Container(
           height: 34,
@@ -833,7 +840,10 @@ class _DurationPickerState extends State<DurationPicker> {
             controller: controller,
             itemExtent: 40,
             physics: const FixedExtentScrollPhysics(),
-            onSelectedItemChanged: (_) => _emit(),
+            onSelectedItemChanged: (_) {
+              HapticFeedback.selectionClick();
+              _emit();
+            },
             childDelegate: ListWheelChildBuilderDelegate(
               childCount: count,
               builder: (context, i) => Center(
