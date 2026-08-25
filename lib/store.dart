@@ -12,7 +12,11 @@ const _schema = 1;
 
 /// Vertical pixels per minute for each zoom step.
 const Map<String, double> kZoom = {'compact': 0.45, 'normal': 0.85, 'roomy': 1.5};
-const double kMinNode = 76;
+
+/// Shortest a block may be drawn, per zoom step. A block shorter than this is
+/// stretched to stay readable, which costs the day some of its true shape — so
+/// the tighter the zoom, the less it is allowed to cheat.
+const Map<String, double> kMinNode = {'compact': 52, 'normal': 62, 'roomy': 78};
 const double kRowGap = 10;
 
 class HabitRange {
@@ -80,6 +84,7 @@ class Store extends ChangeNotifier {
   }
 
   double get ppm => kZoom[zoom] ?? 0.85;
+  double get minNode => kMinNode[zoom] ?? 62;
   String get selectedKey => dateKey(selected);
   bool get selectedIsToday => selectedKey == todayKey();
   /// Occurrences of a repeating block are built per day and are not in the
@@ -302,9 +307,41 @@ class Store extends ChangeNotifier {
     return copy;
   }
 
+  /// Where a new block should start: straight after whatever is already
+  /// planned that day, so one block follows another. On an empty day it opens
+  /// at nine, and on today it never suggests a time that has already passed.
+  /// How the selected day stands: how many blocks, how much of it is planned,
+  /// and how much of the waking stretch it covers is still free.
+  ({int count, int planned, int free}) daySummary() {
+    final list = blocksOn(selectedKey);
+    if (list.isEmpty) return (count: 0, planned: 0, free: 0);
+    var planned = 0;
+    var last = list.first.start;
+    var free = 0;
+    for (final b in list) {
+      planned += b.duration;
+      if (b.start > last) free += b.start - last;
+      if (b.end > last) last = b.end;
+    }
+    return (count: list.length, planned: planned, free: free);
+  }
+
   int nextFreeStart() {
     final list = blocksOn(selectedKey);
-    return list.isEmpty ? 540 : list.last.end;
+    var start = 540;
+    if (list.isNotEmpty) {
+      // Follow the day as planned, even when it runs early — blocking out
+      // 6:30 to 6:31 should hand the next block 6:31, not the morning default.
+      start = list.first.end;
+      for (final b in list) {
+        if (b.end > start) start = b.end;
+      }
+    }
+    if (selectedIsToday) {
+      final soon = ((now + 4) ~/ 5) * 5;
+      if (soon > start) start = soon;
+    }
+    return start.clamp(0, 1435);
   }
 
   /// Empty time takes real height, so a three-hour gap looks like three hours.
@@ -318,7 +355,7 @@ class Store extends ChangeNotifier {
       int? prevEnd;
       final rows = <LaidOutBlock>[];
       for (final b in list) {
-        final h = (44 + b.duration * 0.6).clamp(kMinNode, 150).toDouble();
+        final h = (44 + b.duration * 0.6).clamp(minNode, 150).toDouble();
         rows.add(LaidOutBlock(
           block: b,
           y: y,
@@ -340,7 +377,7 @@ class Store extends ChangeNotifier {
     int? prevEnd;
     final rows = <LaidOutBlock>[];
     for (final b in list) {
-      final h = (b.duration * ppm).clamp(kMinNode, 100000).toDouble();
+      final h = (b.duration * ppm).clamp(minNode, 100000).toDouble();
       var y = (b.start - origin) * ppm;
       final overlaps = prevEnd != null && b.start < prevEnd;
       if (y < prevBottom + kRowGap) y = prevBottom + kRowGap;
