@@ -27,7 +27,11 @@ and habits won't come through.
 **Timeline.** The day is a vertical track and each block sits where it actually
 falls. An empty three-hour afternoon looks like three hours, so you can see the
 gaps rather than count them. Hold a block to pick it up and drag it to a new
-time; tap it to nudge the start or the length in small steps.
+time, pull the handle at its foot to change how long it runs, or tap it to
+nudge the start and the length in small steps.
+
+Two things at the same time stand side by side rather than one below the other,
+and a third at once splits the width again.
 
 Blocks stay on the day you put them on, and a block set to repeat comes back
 daily, weekly or monthly. Change or drop one of those days and the rest of the

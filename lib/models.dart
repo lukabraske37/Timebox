@@ -220,7 +220,20 @@ class LaidOutBlock {
   final double height;
   final bool overlaps;
 
-  LaidOutBlock({required this.block, required this.y, required this.height, required this.overlaps});
+  /// Which side-by-side slot this block sits in, and how many slots the run of
+  /// overlapping blocks it belongs to was split into. Two things at once stand
+  /// next to each other rather than pushing one another down the day.
+  final int column;
+  final int columns;
+
+  LaidOutBlock({
+    required this.block,
+    required this.y,
+    required this.height,
+    required this.overlaps,
+    this.column = 0,
+    this.columns = 1,
+  });
 }
 
 class TimelineLayout {
