@@ -432,6 +432,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
     final metaSize = roomy ? 13.5 : 11.5;
 
     return GestureDetector(
+      key: ValueKey('card-${b.id}'),
       behavior: HitTestBehavior.opaque,
       onTap: () => store.mutate(() => store.selectedBlockId = isSelected ? null : b.id),
       onLongPressStart: (d) {
@@ -555,12 +556,18 @@ class _TimelineScreenState extends State<TimelineScreen> {
         ),
 
         // Pull this to change how long the block runs, in five minute steps.
+        // Only the nub itself takes the drag: spanning the card's whole width
+        // meant any scroll begun near the foot of a card resized it instead of
+        // moving the day, and sitting below the card put part of it out of
+        // reach, since a Stack does not hit-test past its own bounds.
         Positioned(
           left: 0,
           right: 0,
-          bottom: -6,
-          height: 22,
-          child: GestureDetector(
+          bottom: 0,
+          height: 24,
+          child: Align(
+            alignment: Alignment.bottomCenter,
+            child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onVerticalDragStart: (_) {
               HapticFeedback.selectionClick();
@@ -588,13 +595,19 @@ class _TimelineScreenState extends State<TimelineScreen> {
               });
               if (id != null && delta != 0) store.stretchBlock(id, delta);
             },
-            child: Center(
-              child: Container(
-                width: 38,
-                height: 5,
-                decoration: BoxDecoration(
-                  color: isResized ? c.acc : c.txt3.withOpacity(0.55),
-                  borderRadius: BorderRadius.circular(3),
+              child: SizedBox(
+                key: ValueKey('resize-${b.id}'),
+                width: 78,
+                height: 24,
+                child: Center(
+                  child: Container(
+                    width: 40,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: isResized ? c.acc : c.txt3.withOpacity(0.55),
+                      borderRadius: BorderRadius.circular(3),
+                    ),
+                  ),
                 ),
               ),
             ),
