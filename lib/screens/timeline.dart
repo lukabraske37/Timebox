@@ -250,6 +250,13 @@ class _TimelineScreenState extends State<TimelineScreen> {
       ));
     }
 
+    final showNow = store.selectedIsToday &&
+        !store.classicTimeline &&
+        store.now >= layout.origin &&
+        store.now <= layout.last + 30;
+    final nowY = (store.now - layout.origin) * layout.ppm;
+    final railAbove = children.length;
+
     for (final row in layout.rows) {
       children.add(_row(store, c, layout, row, width));
     }
@@ -293,31 +300,40 @@ class _TimelineScreenState extends State<TimelineScreen> {
       }
     }
 
-    if (store.selectedIsToday && !store.classicTimeline && store.now >= layout.origin && store.now <= layout.last + 30) {
+    // The dot and the time stay on top, but the rule itself goes behind the
+    // cards: drawn over them it cut whichever block was running in half.
+    if (showNow) {
+      children.insert(railAbove, Positioned(
+        left: 86,
+        right: 2,
+        top: nowY - 1,
+        height: 2,
+        child: DecoratedBox(decoration: BoxDecoration(color: c.danger.withOpacity(0.45))),
+      ));
       children.add(Positioned(
         left: 79,
+        top: nowY - 6.5,
+        child: Container(
+          width: 13,
+          height: 13,
+          decoration: BoxDecoration(
+            color: c.bg,
+            shape: BoxShape.circle,
+            border: Border.all(color: c.danger, width: 3),
+          ),
+        ),
+      ));
+      children.add(Positioned(
         right: 2,
-        top: (store.now - layout.origin) * layout.ppm - 7,
-        child: Row(children: [
-          Container(
-            width: 13,
-            height: 13,
-            decoration: BoxDecoration(
-              color: c.bg,
-              shape: BoxShape.circle,
-              border: Border.all(color: c.danger, width: 3),
-            ),
-          ),
-          Expanded(child: Container(height: 2, color: c.danger.withOpacity(0.45))),
-          Container(
-            height: 19,
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            alignment: Alignment.center,
-            decoration: BoxDecoration(color: c.danger, borderRadius: BorderRadius.circular(10)),
-            child: Text(fmtMins(store.now, store.use24),
-                style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: c.onDanger)),
-          ),
-        ]),
+        top: nowY - 9.5,
+        child: Container(
+          height: 19,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(color: c.danger, borderRadius: BorderRadius.circular(10)),
+          child: Text(fmtMins(store.now, store.use24),
+              style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: c.onDanger)),
+        ),
       ));
     }
 
