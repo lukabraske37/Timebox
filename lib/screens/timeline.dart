@@ -22,6 +22,11 @@ class _TimelineScreenState extends State<TimelineScreen> {
   bool _overTrash = false;
   double _startY = 0;
 
+  /// Live state while the handle at the foot of a card is being pulled.
+  String? _resizeId;
+  int _resizeDelta = 0;
+  double _resizePixels = 0;
+
   @override
   Widget build(BuildContext context) {
     final store = AppScope.of(context);
@@ -37,14 +42,16 @@ class _TimelineScreenState extends State<TimelineScreen> {
               ? _empty(store, c)
               : SingleChildScrollView(
                   padding: EdgeInsets.fromLTRB(18, 12, 18, selected != null ? 280 : 150),
-                  physics: _dragId == null
+                  physics: _dragId == null && _resizeId == null
                       ? const ClampingScrollPhysics()
                       : const NeverScrollableScrollPhysics(),
                   child: Column(children: [
                     if (store.selectedIsToday && store.now < layout.origin) _aheadChip(store, c, layout),
                     SizedBox(
                       height: layout.trackHeight,
-                      child: _track(store, c, layout),
+                      child: LayoutBuilder(
+                        builder: (_, box) => _track(store, c, layout, box.maxWidth),
+                      ),
                     ),
                   ]),
                 ),
@@ -211,7 +218,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
 
   // ---------- the track ----------
 
-  Widget _track(Store store, AppColors c, TimelineLayout layout) {
+  Widget _track(Store store, AppColors c, TimelineLayout layout, double width) {
     final children = <Widget>[
       // dotted rail
       Positioned(
@@ -244,7 +251,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
     }
 
     for (final row in layout.rows) {
-      children.add(_row(store, c, layout, row));
+      children.add(_row(store, c, layout, row, width));
     }
 
     // Say how long each pause actually is, where the gap is tall enough to read.
@@ -317,171 +324,308 @@ class _TimelineScreenState extends State<TimelineScreen> {
     return Stack(clipBehavior: Clip.none, children: children);
   }
 
-  Widget _row(Store store, AppColors c, TimelineLayout layout, LaidOutBlock row) {
+  Widget _row(Store store, AppColors c, TimelineLayout layout, LaidOutBlock row, double width) {
     final b = row.block;
     final isDragged = _dragId == b.id;
+    final isResized = _resizeId == b.id;
     final isSelected = store.selectedBlockId == b.id;
     final live = store.selectedIsToday && b.start <= store.now && b.end > store.now;
     final palette = c.isDark ? kBlockColorsDark : kBlockColorsLight;
     final iconColor = store.blockColorIcons ? palette[b.color % palette.length] : c.acc;
     final shownStart = isDragged ? (b.start + _delta).clamp(0, 1440 - b.duration) : b.start;
+    final shownDur = isResized ? (b.duration + _resizeDelta).clamp(kStep, 1440) : b.duration;
+
+    final tight = row.columns > 1;
+    // A lone block keeps the old shape, its icon tile sitting over the rail.
+    // Paired blocks have no tile to cover the rail, so they start clear of it
+    // and each carries its own times — one set of stamps in the gutter could
+    // only speak for one of them.
+    final gutter = tight ? 96.0 : 72.0;
+    final slot = (width - gutter) / row.columns;
+    final cardLeft = gutter + row.column * slot;
+    final cardWidth = slot - (tight ? 7 : 0);
 
     return Positioned(
       left: 0,
-      right: 0,
+      width: width,
       top: row.y + (isDragged ? _delta * layout.ppm : 0),
-      height: row.height,
-      child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        SizedBox(
-          width: 62,
-          // Both stamps stay on one line: a wrapped "10:59 AM" would make the
-          // column taller than the block it labels.
-          child: Column(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-            Text(fmtMins(shownStart, store.use24),
-                textAlign: TextAlign.right,
-                maxLines: 1,
-                softWrap: false,
-                overflow: TextOverflow.clip,
-                style: TextStyle(
-                  fontSize: 13.5,
-                  fontWeight: live ? FontWeight.w800 : FontWeight.w500,
-                  color: live ? c.txt : c.txt2,
-                )),
-            Text(fmtMins(shownStart + b.duration, store.use24),
-                textAlign: TextAlign.right,
-                maxLines: 1,
-                softWrap: false,
-                overflow: TextOverflow.clip,
-                style: TextStyle(fontSize: 13.5, color: c.txt3)),
+      height: row.height + (isResized ? _resizeDelta * layout.ppm : 0),
+      child: Stack(clipBehavior: Clip.none, children: [
+        if (!tight)
+          Positioned(
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: 62,
+            child: _stamps(store, c, shownStart, shownDur, live),
+          ),
+        Positioned(
+          left: cardLeft,
+          width: cardWidth,
+          top: 0,
+          bottom: 0,
+          child: _oldRowBody(store, c, layout, row, b, isDragged, isResized, isSelected, live,
+              iconColor, shownStart, shownDur, tight),
+        ),
+      ]),
+    );
+  }
+
+  /// The start and end stamps in the left gutter.
+  Widget _stamps(Store store, AppColors c, int shownStart, int shownDur, bool live) => Column(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(fmtMins(shownStart, store.use24),
+              textAlign: TextAlign.right,
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.clip,
+              style: TextStyle(
+                fontSize: 13.5,
+                fontWeight: live ? FontWeight.w800 : FontWeight.w500,
+                color: live ? c.txt : c.txt2,
+              )),
+          Text(fmtMins(shownStart + shownDur, store.use24),
+              textAlign: TextAlign.right,
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.clip,
+              style: TextStyle(fontSize: 13.5, color: c.txt3)),
+        ],
+      );
+
+  /// The card itself. [tight] is set when the block shares its slot with
+  /// another, where the icon tile would crowd out the title.
+  Widget _oldRowBody(
+    Store store,
+    AppColors c,
+    TimelineLayout layout,
+    LaidOutBlock row,
+    Block b,
+    bool isDragged,
+    bool isResized,
+    bool isSelected,
+    bool live,
+    Color iconColor,
+    int shownStart,
+    int shownDur,
+    bool tight,
+  ) {
+    final roomy = row.columns == 1;
+    final titleSize = roomy ? 19.0 : (row.columns == 2 ? 15.0 : 13.5);
+    final metaSize = roomy ? 13.5 : 11.5;
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => store.mutate(() => store.selectedBlockId = isSelected ? null : b.id),
+      onLongPressStart: (d) {
+        HapticFeedback.mediumImpact();
+        setState(() {
+          _dragId = b.id;
+          _delta = 0;
+          _overTrash = false;
+          _startY = d.globalPosition.dy;
+        });
+      },
+      onLongPressMoveUpdate: (d) {
+        final dy = d.globalPosition.dy - _startY;
+        final steps = (dy / layout.ppm / kStep).round() * kStep;
+        final overTrash = d.globalPosition.dy > MediaQuery.of(context).size.height - 150;
+        if (steps != _delta || overTrash != _overTrash) {
+          setState(() {
+            _delta = steps;
+            _overTrash = overTrash;
+          });
+        }
+      },
+      onLongPressEnd: (_) {
+        final id = _dragId;
+        final delta = _delta;
+        final trash = _overTrash;
+        setState(() {
+          _dragId = null;
+          _delta = 0;
+          _overTrash = false;
+        });
+        if (id == null) return;
+        if (trash) {
+          store.deleteBlock(id);
+        } else if (delta != 0) {
+          store.moveBlock(id, delta);
+        }
+      },
+      child: Stack(clipBehavior: Clip.none, children: [
+        Container(
+          decoration: BoxDecoration(
+            color: store.blockColorIcons ? iconColor.withOpacity(c.isDark ? 0.13 : 0.10) : c.surf,
+            borderRadius: BorderRadius.circular(roomy ? 28 : 20),
+            border: isSelected ? Border.all(color: c.acc, width: 2) : null,
+            boxShadow: isDragged || isResized
+                ? [BoxShadow(color: Colors.black.withOpacity(0.45), blurRadius: 30, offset: const Offset(0, 14))]
+                : null,
+          ),
+          padding: EdgeInsets.fromLTRB(tight ? 12 : 0, 0, 6, 0),
+          child: Row(children: [
+            if (!tight) ...[
+              Container(
+                width: 62,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: live ? c.accTint : c.node,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Icon(iconFor(b.icon), size: 28, color: iconColor),
+              ),
+              const SizedBox(width: 12),
+            ],
+            Expanded(
+              child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(children: [
+                      Flexible(
+                        child: Text(
+                          live
+                              ? '${b.end - store.now}m left · ${durLabel(shownDur)}'
+                              : durLabel(shownDur),
+                          maxLines: 1,
+                          overflow: TextOverflow.clip,
+                          style: TextStyle(
+                              fontSize: metaSize, fontWeight: FontWeight.w600, color: c.txt3),
+                        ),
+                      ),
+                      if (row.overlaps && roomy) ...[
+                        const SizedBox(width: 7),
+                        Container(
+                          height: 19,
+                          padding: const EdgeInsets.symmetric(horizontal: 7),
+                          decoration:
+                              BoxDecoration(color: c.accTint, borderRadius: BorderRadius.circular(10)),
+                          child: Row(children: [
+                            Icon(Icons.merge, size: 13, color: c.acc),
+                            const SizedBox(width: 4),
+                            Text('OVERLAP',
+                                style: TextStyle(
+                                    fontSize: 10.5, fontWeight: FontWeight.w700, color: c.acc)),
+                          ]),
+                        ),
+                      ],
+                    ]),
+                    const SizedBox(height: 2),
+                    Text(b.title,
+                        // A block pinned to the minimum height only has room for
+                        // the duration line plus a single title line; a second
+                        // one would spill out of the card.
+                        maxLines: row.height >= 100 ? 2 : 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            fontSize: titleSize,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: -0.2,
+                            color: c.txt)),
+                    if (tight) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        '${fmtMins(shownStart, store.use24)} – ${fmtMins(shownStart + shownDur, store.use24)}',
+                        maxLines: 1,
+                        overflow: TextOverflow.clip,
+                        style: TextStyle(fontSize: 11, color: c.txt3),
+                      ),
+                    ],
+                  ]),
+            ),
           ]),
         ),
-        const SizedBox(width: 10),
-        Expanded(
+
+        // Pull this to change how long the block runs, in five minute steps.
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: -6,
+          height: 22,
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onTap: () => store.mutate(() => store.selectedBlockId = isSelected ? null : b.id),
-            onLongPressStart: (d) {
-              HapticFeedback.mediumImpact();
+            onVerticalDragStart: (_) {
+              HapticFeedback.selectionClick();
               setState(() {
-                _dragId = b.id;
-                _delta = 0;
-                _overTrash = false;
-                _startY = d.globalPosition.dy;
+                _resizeId = b.id;
+                _resizeDelta = 0;
+                _resizePixels = 0;
               });
             },
-            onLongPressMoveUpdate: (d) {
-              final dy = d.globalPosition.dy - _startY;
-              final steps = (dy / layout.ppm / 5).round() * 5;
-              final overTrash = d.globalPosition.dy > MediaQuery.of(context).size.height - 150;
-              if (steps != _delta || overTrash != _overTrash) {
-                setState(() {
-                  _delta = steps;
-                  _overTrash = overTrash;
-                });
-              }
+            onVerticalDragUpdate: (d) {
+              _resizePixels += d.primaryDelta ?? 0;
+              final steps = (_resizePixels / layout.ppm / kStep).round() * kStep;
+              if (steps == _resizeDelta) return;
+              if (b.duration + steps < kStep) return;
+              HapticFeedback.selectionClick();
+              setState(() => _resizeDelta = steps);
             },
-            onLongPressEnd: (_) {
-              final id = _dragId;
-              final delta = _delta;
-              final trash = _overTrash;
+            onVerticalDragEnd: (_) {
+              final id = _resizeId;
+              final delta = _resizeDelta;
               setState(() {
-                _dragId = null;
-                _delta = 0;
-                _overTrash = false;
+                _resizeId = null;
+                _resizeDelta = 0;
+                _resizePixels = 0;
               });
-              if (id == null) return;
-              if (trash) {
-                store.deleteBlock(id);
-              } else if (delta != 0) {
-                store.moveBlock(id, delta);
-              }
+              if (id != null && delta != 0) store.stretchBlock(id, delta);
             },
-            child: Stack(clipBehavior: Clip.none, children: [
-              Container(
+            child: Center(
+              child: Container(
+                width: 38,
+                height: 5,
                 decoration: BoxDecoration(
-                  color: store.blockColorIcons
-                      ? iconColor.withOpacity(c.isDark ? 0.13 : 0.10)
-                      : c.surf,
-                  borderRadius: BorderRadius.circular(28),
-                  border: isSelected ? Border.all(color: c.acc, width: 2) : null,
-                  boxShadow: isDragged
-                      ? [BoxShadow(color: Colors.black.withOpacity(0.45), blurRadius: 30, offset: const Offset(0, 14))]
-                      : null,
+                  color: isResized ? c.acc : c.txt3.withOpacity(0.55),
+                  borderRadius: BorderRadius.circular(3),
                 ),
-                child: Row(children: [
-                  Container(
-                    width: 62,
-                    height: 48,
-                    decoration: BoxDecoration(
-                      color: live ? c.accTint : c.node,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Icon(iconFor(b.icon), size: 28, color: iconColor),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Row(children: [
-                        Text(
-                          live ? '${b.end - store.now}m left · ${durLabel(b.duration)}' : durLabel(b.duration),
-                          style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: c.txt3),
-                        ),
-                        if (row.overlaps) ...[
-                          const SizedBox(width: 7),
-                          Container(
-                            height: 19,
-                            padding: const EdgeInsets.symmetric(horizontal: 7),
-                            decoration: BoxDecoration(color: c.accTint, borderRadius: BorderRadius.circular(10)),
-                            child: Row(children: [
-                              Icon(Icons.merge, size: 13, color: c.acc),
-                              const SizedBox(width: 4),
-                              Text('OVERLAP',
-                                  style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: c.acc)),
-                            ]),
-                          ),
-                        ],
-                      ]),
-                      const SizedBox(height: 2),
-                      Text(b.title,
-                          // A block pinned to kMinNode only has room for the
-                          // duration line plus a single title line; a second
-                          // one would spill out of the card.
-                          maxLines: row.height >= 100 ? 2 : 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: 19, fontWeight: FontWeight.w700, letterSpacing: -0.2, color: c.txt)),
-                    ]),
-                  ),
-                  const SizedBox(width: 6),
-                ]),
               ),
-              if (isDragged)
-                Positioned(
-                  left: 44,
-                  top: -14,
-                  child: Container(
-                    height: 26,
-                    padding: const EdgeInsets.symmetric(horizontal: 11),
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: _overTrash ? c.danger : c.acc,
-                      borderRadius: BorderRadius.circular(13),
-                      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.35), blurRadius: 12, offset: const Offset(0, 4))],
-                    ),
-                    child: Text(
-                      _overTrash
-                          ? 'Delete'
-                          : '${_delta == 0 ? 'no change' : (_delta > 0 ? '+' : '−') + durLabel(_delta.abs())} → ${fmtMins(shownStart, store.use24)}',
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w800,
-                        color: _overTrash ? c.onDanger : c.accTxt,
-                      ),
-                    ),
-                  ),
-                ),
-            ]),
+            ),
           ),
         ),
+
+        if (isResized)
+          Positioned(
+            right: 8,
+            bottom: 8,
+            child: Container(
+              height: 24,
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(color: c.acc, borderRadius: BorderRadius.circular(12)),
+              child: Text(durLabel(shownDur),
+                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: c.accTxt)),
+            ),
+          ),
+
+        if (isDragged)
+          Positioned(
+            left: 44,
+            top: -14,
+            child: Container(
+              height: 26,
+              padding: const EdgeInsets.symmetric(horizontal: 11),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: _overTrash ? c.danger : c.acc,
+                borderRadius: BorderRadius.circular(13),
+                boxShadow: [
+                  BoxShadow(color: Colors.black.withOpacity(0.35), blurRadius: 12, offset: const Offset(0, 4))
+                ],
+              ),
+              child: Text(
+                _overTrash
+                    ? 'Delete'
+                    : '${_delta == 0 ? 'no change' : (_delta > 0 ? '+' : '−') + durLabel(_delta.abs())} → ${fmtMins(shownStart, store.use24)}',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w800,
+                  color: _overTrash ? c.onDanger : c.accTxt,
+                ),
+              ),
+            ),
+          ),
       ]),
     );
   }

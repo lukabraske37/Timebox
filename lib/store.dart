@@ -376,21 +376,79 @@ class Store extends ChangeNotifier {
     if (selectedIsToday && now > list.first.start - 30 && now < list.first.start) origin = now - 15;
     origin = (origin < 0 ? 0 : (origin ~/ 15) * 15);
 
-    var prevBottom = -1e9;
+    // Each block keeps the place in the day its time gives it. Blocks that
+    // land on top of one another are split into side-by-side columns instead
+    // of being pushed down, so two things at once read as two things at once.
+    final placed = <({Block block, double y, double height, bool overlaps})>[];
     int? prevEnd;
-    final rows = <LaidOutBlock>[];
     for (final b in list) {
       final h = (b.duration * ppm).clamp(minNode, 100000).toDouble();
-      var y = (b.start - origin) * ppm;
-      final overlaps = prevEnd != null && b.start < prevEnd;
-      if (y < prevBottom + kRowGap) y = prevBottom + kRowGap;
-      prevBottom = y + h;
-      prevEnd = b.end;
-      rows.add(LaidOutBlock(block: b, y: y, height: h, overlaps: overlaps));
+      final y = ((b.start - origin) * ppm).toDouble();
+      placed.add((block: b, y: y, height: h, overlaps: prevEnd != null && b.start < prevEnd));
+      if (prevEnd == null || b.end > prevEnd) prevEnd = b.end;
     }
+
+    // Group by time, not by drawn height: things that genuinely run at once
+    // share the width, and a block that merely sits close to another keeps the
+    // whole of it.
+    final columnOf = List<int>.filled(placed.length, 0);
+    final widthOf = List<int>.filled(placed.length, 1);
+    var i = 0;
+    while (i < placed.length) {
+      var clusterEnd = placed[i].block.end;
+      var j = i + 1;
+      while (j < placed.length && placed[j].block.start < clusterEnd) {
+        if (placed[j].block.end > clusterEnd) clusterEnd = placed[j].block.end;
+        j++;
+      }
+
+      // The first column free by the time a block starts takes it, so a column
+      // is reused once what was in it has finished.
+      final freeFrom = <int>[];
+      for (var k = i; k < j; k++) {
+        var slot = freeFrom.indexWhere((t) => placed[k].block.start >= t);
+        if (slot < 0) {
+          freeFrom.add(0);
+          slot = freeFrom.length - 1;
+        }
+        freeFrom[slot] = placed[k].block.end;
+        columnOf[k] = slot;
+      }
+      for (var k = i; k < j; k++) {
+        widthOf[k] = freeFrom.length;
+      }
+      i = j;
+    }
+
+    // Short blocks are stretched to stay readable, which can make two of them
+    // collide even when their times do not. Push a block down only past the
+    // ones whose slot it actually shares.
+    final ys = [for (final p in placed) p.y];
+    for (var k = 0; k < placed.length; k++) {
+      for (var e = 0; e < k; e++) {
+        final sharesSlot = columnOf[k] / widthOf[k] < (columnOf[e] + 1) / widthOf[e] &&
+            columnOf[e] / widthOf[e] < (columnOf[k] + 1) / widthOf[k];
+        if (!sharesSlot) continue;
+        final floor = ys[e] + placed[e].height + kRowGap;
+        if (ys[k] < floor) ys[k] = floor;
+      }
+    }
+
+    final rows = <LaidOutBlock>[
+      for (var k = 0; k < placed.length; k++)
+        LaidOutBlock(
+          block: placed[k].block,
+          y: ys[k],
+          height: placed[k].height,
+          overlaps: placed[k].overlaps,
+          column: columnOf[k],
+          columns: widthOf[k],
+        ),
+    ];
+
     return TimelineLayout(
       rows: rows,
-      trackHeight: prevBottom + 40,
+      trackHeight: rows.fold<double>(0, (m, r) => r.y + r.height > m ? r.y + r.height : m) + 40,
       origin: origin,
       ppm: ppm,
       first: list.first.start,
