@@ -170,7 +170,12 @@ class _BlockSheetState extends State<_BlockSheet> {
         ],
       ]),
       children: [
-        TitleField(controller: _title, icon: _icon, hint: 'Task title', onPickIcon: () async {
+        TitleField(
+            controller: _title,
+            icon: _icon,
+            hint: 'Task title',
+            tint: store.blockColorIcons ? palette[_color % palette.length] : c.acc,
+            onPickIcon: () async {
           final picked = await openIconPicker(context, _icon);
           if (picked != null) setState(() => _icon = picked);
         }),
@@ -223,13 +228,17 @@ class _BlockSheetState extends State<_BlockSheet> {
             if (i > 0) const SizedBox(width: 12),
             GestureDetector(
               onTap: () => setState(() => _color = i),
-              child: Container(
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 140),
                 width: 36,
                 height: 36,
+                padding: EdgeInsets.all(_color == i ? 4 : 0),
                 decoration: BoxDecoration(
-                  color: palette[i],
                   shape: BoxShape.circle,
-                  border: _color == i ? Border.all(color: c.txt, width: 2.5) : null,
+                  border: _color == i ? Border.all(color: palette[i], width: 2.5) : null,
+                ),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(color: palette[i], shape: BoxShape.circle),
                 ),
               ),
             ),
@@ -739,25 +748,34 @@ class TitleField extends StatelessWidget {
   final String hint;
   final VoidCallback onPickIcon;
 
+  /// The colour chosen for this block, so the tile shows it while it is being
+  /// picked rather than only once the sheet is saved.
+  final Color? tint;
+
   const TitleField({
     super.key,
     required this.controller,
     required this.icon,
     required this.hint,
     required this.onPickIcon,
+    this.tint,
   });
 
   @override
   Widget build(BuildContext context) {
     final c = AppScope.colorsOf(context);
+    final shade = tint ?? c.acc;
     return Row(children: [
       GestureDetector(
         onTap: onPickIcon,
         child: Container(
           width: 46,
           height: 46,
-          decoration: BoxDecoration(color: c.surf2, borderRadius: BorderRadius.circular(14)),
-          child: Icon(iconFor(icon), size: 23, color: c.acc),
+          decoration: BoxDecoration(
+            color: tint == null ? c.surf2 : shade.withOpacity(c.isDark ? 0.18 : 0.14),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Icon(iconFor(icon), size: 23, color: shade),
         ),
       ),
       const SizedBox(width: 12),
