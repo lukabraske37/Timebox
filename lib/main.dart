@@ -359,23 +359,6 @@ void showToast(BuildContext context, String message) {
     ));
 }
 
-String weekdayName(DateTime d) {
-  const names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-  return names[d.weekday - 1];
-}
-
-String monthName(int m) {
-  const names = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December'
-  ];
-  return names[m - 1];
-}
-
-String monthShort(int m) {
-  const names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  return names[m - 1];
-}
 
 String dayLabel(Store store, DateTime d) =>
     '${d.day} ${monthName(d.month)} ${d.year}${dateKey(d) == todayKey() ? ' · today' : ''}';

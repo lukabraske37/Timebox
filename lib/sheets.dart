@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'icons.dart';
-import 'main.dart';
 import 'models.dart';
 import 'store.dart';
 import 'theme.dart';
@@ -443,6 +442,7 @@ class _SimpleSheetState extends State<_SimpleSheet> {
   bool _longer = false;
   bool _reminder = false;
   int _time = 540;
+  String? _date;
 
   @override
   void initState() {
@@ -457,6 +457,7 @@ class _SimpleSheetState extends State<_SimpleSheet> {
         _icon = 'checklist';
         _reminder = widget.task?.time != null;
         _time = widget.task?.time ?? 540;
+        _date = widget.task?.date;
       case _SimpleKind.habit:
         _title = TextEditingController(text: widget.habit?.title ?? '');
         _icon = widget.habit?.icon ?? 'local_fire_department';
@@ -470,6 +471,9 @@ class _SimpleSheetState extends State<_SimpleSheet> {
     _title.dispose();
     super.dispose();
   }
+
+  /// Days from today to the chosen due date, or null when there is none.
+  int? get _dueIn => _date == null ? null : daysUntil(_date!);
 
   bool get _editing => widget.inbox != null || widget.task != null || widget.habit != null;
 
@@ -489,6 +493,7 @@ class _SimpleSheetState extends State<_SimpleSheet> {
           id: widget.task?.id ?? store.newId(),
           title: title,
           time: _reminder ? _time : null,
+          date: _date,
           done: widget.task?.done ?? false,
         );
         widget.task == null ? store.addTask(t) : store.replaceTask(t);
@@ -505,6 +510,41 @@ class _SimpleSheetState extends State<_SimpleSheet> {
         }
     }
     Navigator.pop(context);
+  }
+
+  /// A full calendar, for a due date further off than the two quick pills.
+  /// Themed by hand because the stock dialog otherwise arrives in Material
+  /// blue, whatever the app is set to.
+  Future<void> _pickDate() async {
+    final c = AppScope.colorsOf(context);
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _date == null ? now : keyToDate(_date!),
+      firstDate: DateTime(now.year - 1),
+      lastDate: DateTime(now.year + 5),
+      builder: (ctx, child) {
+        final base = c.isDark ? ThemeData.dark() : ThemeData.light();
+        return Theme(
+          data: base.copyWith(
+            colorScheme: base.colorScheme.copyWith(
+              primary: c.acc,
+              onPrimary: c.accTxt,
+              surface: c.surf,
+              onSurface: c.txt,
+            ),
+            datePickerTheme: DatePickerThemeData(
+              backgroundColor: c.surf,
+              headerBackgroundColor: c.acc,
+              headerForegroundColor: c.accTxt,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+    if (picked != null && mounted) setState(() => _date = dateKey(picked));
   }
 
   @override
@@ -581,6 +621,56 @@ class _SimpleSheetState extends State<_SimpleSheet> {
                 style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: c.acc)),
           ],
         ],
+        if (widget.kind == _SimpleKind.task) ...[
+          const SizedBox(height: 24),
+          FieldLabel(
+            'When is it due?',
+            trailing: _date == null ? null : 'Clear',
+            onTrailing: _date == null ? null : () => setState(() => _date = null),
+          ),
+          const SizedBox(height: 12),
+          // Today and tomorrow cover most of what gets written down; the third
+          // pill opens a calendar and then names the day it is holding, so the
+          // chosen date stays visible instead of hiding behind "Pick…".
+          Row(children: [
+            Expanded(
+              child: PillButton(
+                label: 'Today',
+                height: 40,
+                selected: _dueIn == 0,
+                onTap: () => setState(() => _date = todayKey()),
+              ),
+            ),
+            const SizedBox(width: 7),
+            Expanded(
+              child: PillButton(
+                label: 'Tomorrow',
+                height: 40,
+                selected: _dueIn == 1,
+                onTap: () => setState(
+                    () => _date = dateKey(DateTime.now().add(const Duration(days: 1)))),
+              ),
+            ),
+            const SizedBox(width: 7),
+            Expanded(
+              child: PillButton(
+                label: _dueIn != null && (_dueIn! < 0 || _dueIn! > 1) ? dueLabel(_date!) : 'Pick a day',
+                height: 40,
+                selected: _dueIn != null && (_dueIn! < 0 || _dueIn! > 1),
+                onTap: _pickDate,
+              ),
+            ),
+          ]),
+          if (_date == null) ...[
+            const SizedBox(height: 10),
+            Text('No date — it waits at the bottom of the list until you give it one.',
+                style: TextStyle(fontSize: 12.5, height: 1.4, color: c.txt3)),
+          ] else if (_dueIn! < 0) ...[
+            const SizedBox(height: 10),
+            Text('${dueLabel(_date!)} has already gone by.',
+                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: c.danger)),
+          ],
+        ],
         if (widget.kind != _SimpleKind.inbox) ...[
           const SizedBox(height: 22),
           Container(
@@ -593,7 +683,12 @@ class _SimpleSheetState extends State<_SimpleSheet> {
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text('Add Reminder',
                       style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600, color: c.txt)),
-                  Text(_reminder ? 'Notification at ${fmtMins(_time, store.use24)}' : 'Off',
+                  Text(
+                      _reminder
+                          ? _date == null
+                              ? 'Notification at ${fmtMins(_time, store.use24)}'
+                              : '${dueLabel(_date!)} at ${fmtMins(_time, store.use24)}'
+                          : 'Off',
                       style: TextStyle(fontSize: 12, color: c.txt3)),
                 ]),
               ),

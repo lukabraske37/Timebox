@@ -153,17 +153,27 @@ class InboxItem {
 class Task {
   String id;
   String title;
+
+  /// Time of day the reminder fires, in minutes past midnight. Null for a task
+  /// with no reminder.
   int? time;
+
+  /// The day it is due, as a date key. Null means someday — the task sits at
+  /// the bottom of the list and any reminder simply fires at the next [time].
+  String? date;
+
   bool done;
 
-  Task({required this.id, required this.title, this.time, this.done = false});
+  Task({required this.id, required this.title, this.time, this.date, this.done = false});
 
-  Map<String, dynamic> toJson() => {'id': id, 'title': title, 'time': time, 'done': done};
+  Map<String, dynamic> toJson() =>
+      {'id': id, 'title': title, 'time': time, 'date': date, 'done': done};
 
   static Task fromJson(Map<String, dynamic> j) => Task(
         id: j['id'] as String,
         title: j['title'] as String? ?? '',
         time: (j['time'] as num?)?.toInt(),
+        date: j['date'] as String?,
         done: j['done'] as bool? ?? false,
       );
 }
@@ -253,3 +263,41 @@ class TimelineLayout {
     required this.last,
   });
 }
+
+/// Whole days from today to [key]: 0 today, 1 tomorrow, negative once it has
+/// gone by. Compared date to date, so the hour of day never tips the count.
+int daysUntil(String key) {
+  final d = keyToDate(key);
+  final now = DateTime.now();
+  return DateTime(d.year, d.month, d.day)
+      .difference(DateTime(now.year, now.month, now.day))
+      .inDays;
+}
+
+/// A due date in the words you would use out loud: the next few days by name,
+/// anything further off as a date.
+String dueLabel(String key) {
+  final n = daysUntil(key);
+  if (n == 0) return 'Today';
+  if (n == 1) return 'Tomorrow';
+  if (n == -1) return 'Yesterday';
+  final d = keyToDate(key);
+  if (n > 1 && n < 7) return weekdayName(d).substring(0, 3);
+  final year = d.year == DateTime.now().year ? '' : ' ${d.year}';
+  return '${d.day} ${monthShort(d.month)}$year';
+}
+
+String weekdayName(DateTime d) {
+  const names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  return names[d.weekday - 1];
+}
+
+String monthName(int m) {
+  const names = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+  return names[m - 1];
+}
+
+String monthShort(int m) => monthName(m).substring(0, 3);

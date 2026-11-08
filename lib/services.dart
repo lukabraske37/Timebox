@@ -56,6 +56,15 @@ class Notifications {
     return when;
   }
 
+  /// The exact moment [minutes] falls on [dayKey], or null if it has passed.
+  /// Unlike [_next] this never rolls forward: a task due yesterday is late,
+  /// not due again tomorrow.
+  static tz.TZDateTime? _on(String dayKey, int minutes) {
+    final d = keyToDate(dayKey);
+    final when = tz.TZDateTime(tz.local, d.year, d.month, d.day, minutes ~/ 60, minutes % 60);
+    return when.isBefore(tz.TZDateTime.now(tz.local)) ? null : when;
+  }
+
   static Future<void> _schedule(int id, String title, String body, tz.TZDateTime when) async {
     await _plugin.zonedSchedule(
       id,
@@ -107,7 +116,12 @@ class Notifications {
     if (tasksOn) {
       for (final t in tasks) {
         if (t.done || t.time == null) continue;
-        await _schedule(id++, t.title, 'Task due', _next(today, t.time!));
+        if (t.date == null) {
+          await _schedule(id++, t.title, 'Task due', _next(today, t.time!));
+        } else {
+          final when = _on(t.date!, t.time!);
+          if (when != null) await _schedule(id++, t.title, 'Due ${dueLabel(t.date!)}', when);
+        }
       }
     }
 
