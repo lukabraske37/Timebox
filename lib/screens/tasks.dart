@@ -13,9 +13,18 @@ class TasksScreen extends StatelessWidget {
     final c = AppScope.colorsOf(context);
     final done = store.tasks.where((t) => t.done).length;
     final left = store.tasks.length - done;
-    // Finished tasks sink to the bottom so what is still open stays in reach.
+    // Finished tasks sink to the bottom so what is still open stays in reach,
+    // and what is open is ordered by when it is due: overdue first, then the
+    // next few days, then the undated ones, which keep the order they came in.
+    final open = store.tasks.where((t) => !t.done).toList();
+    final dated = open.where((t) => t.date != null).toList()
+      ..sort((a, b) {
+        final day = a.date!.compareTo(b.date!);
+        return day != 0 ? day : (a.time ?? 0).compareTo(b.time ?? 0);
+      });
     final ordered = [
-      ...store.tasks.where((t) => !t.done),
+      ...dated,
+      ...open.where((t) => t.date == null),
       ...store.tasks.where((t) => t.done),
     ];
 
@@ -87,32 +96,32 @@ class TasksScreen extends StatelessWidget {
                               ),
                             ),
                             const SizedBox(height: 6),
-                            Row(children: [
-                              Container(
-                                height: 22,
-                                padding: const EdgeInsets.symmetric(horizontal: 9),
-                                decoration: BoxDecoration(
-                                  color: t.time == null ? c.surf2 : c.accTint,
-                                  borderRadius: BorderRadius.circular(11),
+                            // Wrapped rather than a Row: a task due on a named
+                            // day with a reminder on it runs out of width on a
+                            // narrow phone, and the chips belong under each
+                            // other rather than clipped.
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 6,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                _Chip(
+                                  icon: Icons.event,
+                                  label: t.date == null ? 'Someday' : dueLabel(t.date!),
+                                  set: t.date != null,
+                                  // An overdue task says so in red, but only
+                                  // while it is still open.
+                                  danger: !t.done && t.date != null && daysUntil(t.date!) < 0,
                                 ),
-                                child: Row(children: [
-                                  Icon(Icons.schedule, size: 14, color: t.time == null ? c.txt3 : c.acc),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    t.time == null ? 'Set time' : fmtMins(t.time!, store.use24),
-                                    style: TextStyle(
-                                      fontSize: 11.5,
-                                      fontWeight: FontWeight.w700,
-                                      color: t.time == null ? c.txt3 : c.acc,
-                                    ),
-                                  ),
-                                ]),
-                              ),
-                              if (t.time != null) ...[
-                                const SizedBox(width: 6),
-                                Icon(Icons.notifications, size: 16, color: t.done ? c.txt3 : c.txt2),
+                                _Chip(
+                                  icon: Icons.schedule,
+                                  label: t.time == null ? 'Set time' : fmtMins(t.time!, store.use24),
+                                  set: t.time != null,
+                                ),
+                                if (t.time != null)
+                                  Icon(Icons.notifications, size: 16, color: t.done ? c.txt3 : c.txt2),
                               ],
-                            ]),
+                            ),
                           ]),
                         ),
                       ),
@@ -177,6 +186,42 @@ class TasksScreen extends StatelessWidget {
           ]),
         ),
       ),
+    );
+  }
+}
+
+/// One of the small pills under a task's title: due date, time, state.
+class _Chip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+
+  /// Whether the task actually carries this value, or the pill is an invitation
+  /// to set one.
+  final bool set;
+  final bool danger;
+
+  const _Chip({required this.icon, required this.label, required this.set, this.danger = false});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = AppScope.colorsOf(context);
+    final fg = danger ? c.danger : (set ? c.acc : c.txt3);
+    return Container(
+      height: 22,
+      padding: const EdgeInsets.symmetric(horizontal: 9),
+      decoration: BoxDecoration(
+        color: danger
+            ? c.danger.withOpacity(c.isDark ? 0.18 : 0.10)
+            : (set ? c.accTint : c.surf2),
+        borderRadius: BorderRadius.circular(11),
+      ),
+      // Shrink to the label. Inside a Wrap the incoming width is bounded, so a
+      // Row left at its default would stretch each pill across the card.
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(icon, size: 14, color: fg),
+        const SizedBox(width: 4),
+        Text(label, style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: fg)),
+      ]),
     );
   }
 }

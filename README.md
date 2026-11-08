@@ -40,8 +40,10 @@ series carries on untouched.
 **Inbox.** The things you plan over and over — gym, walk the dog, school run —
 live here with their usual length. One tap drops any of them onto the day.
 
-**Tasks.** A plain list for the things that just need doing, each with an
-optional reminder.
+**Tasks.** A plain list for the things that just need doing. Give one a day —
+today, tomorrow, or any date off the calendar — and an optional reminder, and
+the list keeps whatever is due soonest at the top. Anything overdue says so in
+red, anything without a date waits at the bottom until you give it one.
 
 **Habits.** Tick them off daily and watch the streak grow. Charts show the last
 five weeks up to a full year.

@@ -387,6 +387,34 @@ class _TimelineScreenState extends State<TimelineScreen> {
     );
   }
 
+  void _beginResize(Block b) {
+    HapticFeedback.selectionClick();
+    setState(() {
+      _resizeId = b.id;
+      _resizeDelta = 0;
+      _resizePixels = 0;
+    });
+  }
+
+  /// [pixels] is how far the finger has travelled since the pull began.
+  void _resizeTo(Block b, TimelineLayout layout, double pixels) {
+    final steps = (pixels / layout.ppm / kStep).round() * kStep;
+    if (steps == _resizeDelta || b.duration + steps < kStep) return;
+    HapticFeedback.selectionClick();
+    setState(() => _resizeDelta = steps);
+  }
+
+  void _endResize(Store store) {
+    final id = _resizeId;
+    final delta = _resizeDelta;
+    setState(() {
+      _resizeId = null;
+      _resizeDelta = 0;
+      _resizePixels = 0;
+    });
+    if (id != null && delta != 0) store.stretchBlock(id, delta);
+  }
+
   /// The start and end stamps in the left gutter.
   Widget _stamps(Store store, AppColors c, int shownStart, int shownDur, bool live) => Column(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -564,41 +592,31 @@ class _TimelineScreenState extends State<TimelineScreen> {
           left: 0,
           right: 0,
           bottom: 0,
-          height: 24,
+          height: 32,
           child: Align(
             alignment: Alignment.bottomCenter,
             child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onVerticalDragStart: (_) {
-              HapticFeedback.selectionClick();
-              setState(() {
-                _resizeId = b.id;
-                _resizeDelta = 0;
-                _resizePixels = 0;
-              });
-            },
-            onVerticalDragUpdate: (d) {
-              _resizePixels += d.primaryDelta ?? 0;
-              final steps = (_resizePixels / layout.ppm / kStep).round() * kStep;
-              if (steps == _resizeDelta) return;
-              if (b.duration + steps < kStep) return;
-              HapticFeedback.selectionClick();
-              setState(() => _resizeDelta = steps);
-            },
-            onVerticalDragEnd: (_) {
-              final id = _resizeId;
-              final delta = _resizeDelta;
-              setState(() {
-                _resizeId = null;
-                _resizeDelta = 0;
-                _resizePixels = 0;
-              });
-              if (id != null && delta != 0) store.stretchBlock(id, delta);
-            },
+              behavior: HitTestBehavior.opaque,
+              // Both gesture families drive the same resize. A quick pull
+              // arrives as a drag; resting on the handle first turns it into a
+              // long press, which the card would otherwise claim — and then
+              // the block moved instead of growing.
+              onVerticalDragStart: (_) => _beginResize(b),
+              onVerticalDragUpdate: (d) {
+                _resizePixels += d.primaryDelta ?? 0;
+                _resizeTo(b, layout, _resizePixels);
+              },
+              onVerticalDragEnd: (_) => _endResize(store),
+              onLongPressStart: (_) => _beginResize(b),
+              onLongPressMoveUpdate: (d) => _resizeTo(b, layout, d.offsetFromOrigin.dy),
+              onLongPressEnd: (_) => _endResize(store),
               child: SizedBox(
                 key: ValueKey('resize-${b.id}'),
-                width: 78,
-                height: 24,
+                // Comfortably larger than the nub it draws: the card grows
+                // under the finger while resizing, so the handle has moved by
+                // the time you reach for it again.
+                width: 112,
+                height: 32,
                 child: Center(
                   child: Container(
                     width: 40,

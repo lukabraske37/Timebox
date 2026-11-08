@@ -578,10 +578,10 @@ class Store extends ChangeNotifier {
       InboxItem(id: 'i4', icon: 'local_cafe', title: 'Coffee break', dur: 15),
     ];
     tasks = [
-      Task(id: 't1', title: 'Pay the electricity bill', time: 1080),
+      Task(id: 't1', title: 'Pay the electricity bill', time: 1080, date: today),
       Task(id: 't2', title: 'Renew passport'),
       Task(id: 't3', title: 'Water the plants', done: true),
-      Task(id: 't4', title: 'Send the invoice', time: 600),
+      Task(id: 't4', title: 'Send the invoice', time: 600, date: dateKey(DateTime.now().add(const Duration(days: 2)))),
     ];
     habits = [
       Habit(id: 'h1', title: 'Read 20 pages', icon: 'book', time: 1350, history: _history([1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 14, 15, 16, 17, 18, 19, 20, 22, 24, 25, 26, 27, 28, 30, 0])),
