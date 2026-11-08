@@ -46,6 +46,17 @@ jobs:
         # check off instead: D8 dexes every class file version they produce.
         run: echo 'kotlin.jvm.target.validation.mode=IGNORE' >> android/gradle.properties
 
+      - name: Fetch Gradle from Gradle's own server
+        # The wrapper the Flutter template writes points at GitHub's release
+        # downloads, which answered 504 for a solid quarter of an hour on 8 Nov
+        # and took three builds down with it. services.gradle.org serves the
+        # same archive and is not the host everything else here already leans
+        # on. Left alone if the template ever stops using GitHub.
+        run: |
+          f=android/gradle/wrapper/gradle-wrapper.properties
+          sed -i -E 's#^distributionUrl=.*/gradle-distributions/releases/download/v?([0-9.]+)/gradle-([0-9.]+)-([a-z]+)\.zip#distributionUrl=https\\://services.gradle.org/distributions/gradle-\2-\3.zip#' "$f"
+          grep distributionUrl "$f"
+
       - name: Compile every plugin against SDK 36
         # Plugins pin their own compileSdk — file_picker still sits on 34 — but
         # flutter_plugin_android_lifecycle now declares that everything using it
@@ -115,7 +126,17 @@ jobs:
       # them before spending five minutes on a broken APK.
       - run: flutter test
 
-      - run: flutter build apk --release
+      # Gradle pulls plugins, the Kotlin compiler and its own distribution over
+      # the network on a cold runner, and any one of those can answer 504 for a
+      # few minutes. Give the whole build three goes before calling it broken.
+      - name: Build the APK
+        run: |
+          for attempt in 1 2 3; do
+            if flutter build apk --release; then exit 0; fi
+            echo "::warning::APK build attempt $attempt failed, trying again"
+            sleep $((attempt * 60))
+          done
+          exit 1
 
       - name: Upload the APK
         uses: actions/upload-artifact@v4
