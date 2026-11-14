@@ -127,8 +127,10 @@ class TasksScreen extends StatelessWidget {
                       ),
                       GestureDetector(
                         onTap: () => openTaskSheet(context, existing: t),
+                        // A full-size target: the pencil alone is 18 pixels.
+                        behavior: HitTestBehavior.opaque,
                         child: Padding(
-                          padding: const EdgeInsets.all(7),
+                          padding: const EdgeInsets.all(13),
                           child: Icon(Icons.edit, size: 18, color: c.txt3),
                         ),
                       ),

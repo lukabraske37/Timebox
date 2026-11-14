@@ -316,3 +316,101 @@ class PillButton extends StatelessWidget {
     );
   }
 }
+
+/// A red row for something that cannot simply be tapped back.
+class DangerRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const DangerRow({super.key, required this.icon, required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = AppScope.colorsOf(context);
+    return Material(
+      color: c.danger.withOpacity(c.isDark ? 0.14 : 0.10),
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: onTap,
+        child: SizedBox(
+          height: 54,
+          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            Icon(icon, size: 20, color: c.danger),
+            const SizedBox(width: 8),
+            Text(label, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: c.danger)),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+/// Asks before anything that replaces or removes a lot at once. Resolves to
+/// false if the dialog is dismissed any other way.
+Future<bool> confirm(
+  BuildContext context, {
+  required String title,
+  required String body,
+  required String action,
+  bool danger = false,
+}) async {
+  final c = AppScope.colorsOf(context);
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (dialog) => Dialog(
+      backgroundColor: c.surf,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(title, style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800, color: c.txt)),
+          const SizedBox(height: 10),
+          Text(body, style: TextStyle(fontSize: 14, height: 1.5, color: c.txt2)),
+          const SizedBox(height: 22),
+          Row(children: [
+            Expanded(
+              child: PrimaryButton(
+                label: 'Cancel',
+                background: c.surf2,
+                foreground: c.txt2,
+                onTap: () => Navigator.pop(dialog, false),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: PrimaryButton(
+                label: action,
+                background: danger ? c.danger : c.acc,
+                foreground: danger ? c.onDanger : c.accTxt,
+                onTap: () => Navigator.pop(dialog, true),
+              ),
+            ),
+          ]),
+        ]),
+      ),
+    ),
+  );
+  return ok ?? false;
+}
+
+/// A short message at the foot of the screen.
+void showNotice(BuildContext context, String message, {bool bad = false}) {
+  final c = AppScope.colorsOf(context);
+  ScaffoldMessenger.of(context)
+    ..clearSnackBars()
+    ..showSnackBar(SnackBar(
+      backgroundColor: c.surf2,
+      behavior: SnackBarBehavior.floating,
+      duration: Duration(milliseconds: bad ? 4200 : 2400),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+      content: Row(children: [
+        Icon(bad ? Icons.error_outline : Icons.check_circle, size: 19, color: bad ? c.danger : c.acc),
+        const SizedBox(width: 9),
+        Expanded(
+          child: Text(message, style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: c.txt)),
+        ),
+      ]),
+    ));
+}

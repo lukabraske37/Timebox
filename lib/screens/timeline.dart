@@ -617,10 +617,13 @@ class _TimelineScreenState extends State<TimelineScreen> {
                 // the time you reach for it again.
                 width: 112,
                 height: 32,
-                child: Center(
+                // Drawn at the very foot of the card. Centred in its own touch
+                // area it sat across the title of any block under an hour.
+                child: Align(
+                  alignment: const Alignment(0, 0.86),
                   child: Container(
-                    width: 40,
-                    height: 5,
+                    width: 36,
+                    height: 4,
                     decoration: BoxDecoration(
                       color: isResized ? c.acc : c.txt3.withOpacity(0.55),
                       borderRadius: BorderRadius.circular(3),

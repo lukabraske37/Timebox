@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models.dart';
 import '../services.dart';
+import '../store.dart';
 import '../theme.dart';
 import '../ui.dart';
 
@@ -17,7 +18,7 @@ class SettingsScreen extends StatelessWidget {
     void open(Widget page) => Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
 
     return Column(children: [
-      const ScreenTitle(title: 'Settings', subtitle: 'Timebox 1.0 · local only'),
+      ScreenTitle(title: 'Settings', subtitle: 'Timebox $kAppVersion · local only'),
       Expanded(
         child: ListView(
           padding: const EdgeInsets.fromLTRB(18, 6, 18, 40),
@@ -114,14 +115,18 @@ class SettingsScreen extends StatelessWidget {
             NavRow(
               icon: Icons.download,
               title: 'Backup',
-              subtitle: 'Export or restore one local file',
+              subtitle: store.daysSinceBackup == null
+                  ? 'No backup file yet'
+                  : store.daysSinceBackup == 0
+                      ? 'Backed up today'
+                      : 'Last backup ${store.daysSinceBackup} days ago',
               onTap: () => open(const BackupPage()),
             ),
             const SizedBox(height: 10),
             NavRow(
               icon: Icons.fingerprint,
-              title: 'Biometric Lock',
-              subtitle: store.biometric ? 'On · asks on every launch' : 'Off',
+              title: 'App Lock',
+              subtitle: store.biometric ? 'On · locks when you leave' : 'Off',
               onTap: () => open(const LockPage()),
             ),
             const SizedBox(height: 22),
@@ -151,7 +156,7 @@ class SettingsScreen extends StatelessWidget {
             NavRow(
               icon: Icons.info,
               title: 'About',
-              subtitle: 'Timebox 1.0',
+              subtitle: 'Timebox $kAppVersion',
               onTap: () => open(const AboutPage()),
             ),
           ],
@@ -347,27 +352,105 @@ class LookPage extends StatelessWidget {
 class BackupPage extends StatelessWidget {
   const BackupPage({super.key});
 
+  static String snapshotLabel(Snapshot s) {
+    if (s.isBeforeRestore) return 'Before the last restore';
+    final n = daysUntil(s.id);
+    if (n == 0) return 'Start of today';
+    if (n == -1) return 'Yesterday';
+    final d = keyToDate(s.id);
+    return '${weekdayName(d)} ${d.day} ${monthShort(d.month)}';
+  }
+
+  static String _counts(int blocks, int tasks, int habits, int inbox) =>
+      '$blocks blocks · $tasks tasks · $habits habits · $inbox inbox';
+
+  Future<void> _restoreFile(BuildContext context) async {
+    final store = AppScope.of(context);
+    final picked = await Backup.pick();
+    if (picked == null || !context.mounted) return;
+    final data = picked.data;
+    if (data == null) {
+      showNotice(context, picked.error ?? 'That file could not be read.', bad: true);
+      return;
+    }
+    final n = Store.countsIn(data);
+    final ok = await confirm(
+      context,
+      title: 'Restore this backup?',
+      body: 'It holds ${_counts(n.blocks, n.tasks, n.habits, n.inbox)}.\n\n'
+          'Everything in the app now is replaced. A copy of it is kept under '
+          '"Earlier copies" in case this is the wrong file.',
+      action: 'Restore',
+    );
+    if (!ok || !context.mounted) return;
+    final done = await store.restore(data);
+    if (context.mounted) showNotice(context, done ? 'Backup restored' : 'That backup could not be restored', bad: !done);
+  }
+
   @override
   Widget build(BuildContext context) {
     final store = AppScope.of(context);
     final c = AppScope.colorsOf(context);
+    final since = store.daysSinceBackup;
+    final stale = since == null || since >= 14;
+    final snaps = store.snapshots();
+
     return SubPage(title: 'Backup', children: [
       Panel(
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('On this phone', style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700, color: c.txt)),
-          const SizedBox(height: 6),
-          Text(
-            '${store.blocks.length} blocks · ${store.tasks.length} tasks · '
-            '${store.habits.length} habits · ${store.inbox.length} inbox',
-            style: TextStyle(fontSize: 12.5, height: 1.5, color: c.txt2),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: stale ? c.danger.withOpacity(c.isDark ? 0.18 : 0.10) : c.accTint,
+              borderRadius: BorderRadius.circular(13),
+            ),
+            child: Icon(stale ? Icons.cloud_off : Icons.verified_user, size: 21, color: stale ? c.danger : c.acc),
+          ),
+          const SizedBox(width: 13),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(
+                since == null
+                    ? 'No backup file yet'
+                    : since == 0
+                        ? 'Backed up today'
+                        : 'Last backup $since ${since == 1 ? 'day' : 'days'} ago',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: c.txt),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                _counts(store.blocks.length, store.tasks.length, store.habits.length, store.inbox.length),
+                style: TextStyle(fontSize: 12.5, height: 1.5, color: c.txt2),
+              ),
+              if (stale) ...[
+                const SizedBox(height: 6),
+                Text('Your plans live only on this phone. Save a file somewhere else so a lost or reset phone does not take them with it.',
+                    style: TextStyle(fontSize: 12, height: 1.45, color: c.txt3)),
+              ],
+            ]),
           ),
         ]),
       ),
       const SizedBox(height: 12),
       PrimaryButton(
-        label: 'Export a backup file',
-        icon: Icons.download,
-        onTap: () => Backup.export(store.toJson()),
+        label: 'Save a backup file',
+        icon: Icons.save_alt,
+        onTap: () async {
+          final saved = await Backup.saveToDevice(store.toJson());
+          if (saved) store.markBackedUp();
+          if (context.mounted && saved) showNotice(context, 'Backup saved');
+        },
+      ),
+      const SizedBox(height: 10),
+      PrimaryButton(
+        label: 'Send a backup to another app',
+        icon: Icons.ios_share,
+        background: c.surf2,
+        foreground: c.txt,
+        onTap: () async {
+          if (await Backup.share(store.toJson())) store.markBackedUp();
+        },
       ),
       const SizedBox(height: 10),
       PrimaryButton(
@@ -375,29 +458,61 @@ class BackupPage extends StatelessWidget {
         icon: Icons.upload,
         background: c.surf2,
         foreground: c.txt,
-        onTap: () async {
-          final data = await Backup.import();
-          if (data != null) await store.restore(data);
-        },
+        onTap: () => _restoreFile(context),
       ),
-      const SizedBox(height: 10),
-      GestureDetector(
-        onTap: () => store.resetDemo(),
-        child: Container(
-          height: 50,
-          alignment: Alignment.center,
-          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-            Icon(Icons.restart_alt, size: 19, color: c.danger),
-            const SizedBox(width: 8),
-            Text('Reset to demo data',
-                style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700, color: c.danger)),
-          ]),
+      const SizedBox(height: 24),
+      const SectionLabel('Earlier copies'),
+      if (snaps.isEmpty)
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: Text('Timebox keeps a copy from each of the last $kSnapshotsKept days you opened it. The first one appears tomorrow.',
+              style: TextStyle(fontSize: 12.5, height: 1.5, color: c.txt3)),
+        )
+      else ...[
+        for (final snap in snaps) ...[
+          NavRow(
+            icon: snap.isBeforeRestore ? Icons.undo : Icons.history,
+            title: snapshotLabel(snap),
+            subtitle: _counts(snap.blocks, snap.tasks, snap.habits, snap.inbox),
+            onTap: () async {
+              final ok = await confirm(
+                context,
+                title: 'Go back to this copy?',
+                body: '${snapshotLabel(snap)}: ${_counts(snap.blocks, snap.tasks, snap.habits, snap.inbox)}.\n\n'
+                    'What is in the app now is kept as "Before the last restore".',
+                action: 'Go back',
+              );
+              if (!ok || !context.mounted) return;
+              final done = await store.restoreSnapshot(snap.id);
+              if (context.mounted) showNotice(context, done ? 'Copy restored' : 'That copy could not be read', bad: !done);
+            },
+          ),
+          const SizedBox(height: 10),
+        ],
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: Text('Kept automatically on this phone for $kSnapshotsKept days. They go if the app is uninstalled — a backup file does not.',
+              style: TextStyle(fontSize: 12, height: 1.5, color: c.txt3)),
         ),
-      ),
-      Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4),
-        child: Text('Nothing leaves the phone. The backup is one plain JSON file you keep yourself.',
-            style: TextStyle(fontSize: 12, height: 1.5, color: c.txt3)),
+      ],
+      const SizedBox(height: 24),
+      const SectionLabel('Danger zone'),
+      DangerRow(
+        icon: Icons.delete_forever,
+        label: 'Erase everything',
+        onTap: () async {
+          final ok = await confirm(
+            context,
+            title: 'Erase everything?',
+            body: 'All blocks, tasks, habits and inbox entries are removed. Settings stay. '
+                'A copy is kept under "Earlier copies" until the next restore.',
+            action: 'Erase',
+            danger: true,
+          );
+          if (!ok) return;
+          await store.eraseAll();
+          if (context.mounted) showNotice(context, 'Everything erased');
+        },
       ),
     ]);
   }
@@ -410,27 +525,46 @@ class LockPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final store = AppScope.of(context);
     final c = AppScope.colorsOf(context);
-    return SubPage(title: 'Biometric Lock', children: [
+    return SubPage(title: 'App Lock', children: [
       SwitchRow(
         title: 'Require unlock',
-        subtitle: 'Ask for a fingerprint on every launch',
+        subtitle: 'Fingerprint, face or your screen lock',
         value: store.biometric,
         onChanged: (v) async {
-          if (v && !await Biometrics.available()) return;
+          if (v && !await Biometrics.available()) {
+            if (context.mounted) {
+              showNotice(context, 'Set up a fingerprint or screen lock on this phone first', bad: true);
+            }
+            return;
+          }
+          // Turning the lock off is exactly what someone holding an unlocked
+          // phone would try, so both directions ask for the owner.
+          if (!await Biometrics.authenticate()) return;
           store.mutate(() => store.biometric = v);
         },
       ),
-      const SizedBox(height: 12),
-      PrimaryButton(
-        label: 'Lock now',
-        icon: Icons.lock,
-        background: c.surf2,
-        foreground: c.txt,
-        onTap: () {
-          store.mutate(() => store.locked = true);
-          Navigator.pop(context);
-        },
+      const SizedBox(height: 10),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: Text(
+          'Timebox locks when it is opened and again after ${Store.lockAfter.inSeconds} seconds in the background. '
+          'While the lock is on, the app is blanked out in the recent-apps view.',
+          style: TextStyle(fontSize: 12, height: 1.5, color: c.txt3),
+        ),
       ),
+      if (store.biometric) ...[
+        const SizedBox(height: 14),
+        PrimaryButton(
+          label: 'Lock now',
+          icon: Icons.lock,
+          background: c.surf2,
+          foreground: c.txt,
+          onTap: () {
+            store.mutate(() => store.locked = true);
+            Navigator.pop(context);
+          },
+        ),
+      ],
     ]);
   }
 }
@@ -452,7 +586,7 @@ class AboutPage extends StatelessWidget {
             child: Icon(Icons.schedule, size: 32, color: c.acc),
           ),
           const SizedBox(height: 14),
-          Text('Timebox 1.0', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: c.txt)),
+          Text('Timebox $kAppVersion', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: c.txt)),
           const SizedBox(height: 6),
           Text('Local-only day planner. No account, no cloud, no analytics.',
               textAlign: TextAlign.center, style: TextStyle(fontSize: 13, height: 1.5, color: c.txt2)),
@@ -461,9 +595,11 @@ class AboutPage extends StatelessWidget {
       const SizedBox(height: 10),
       Panel(
         child: Column(children: [
-          _row(c, 'Build', '1.0.0 (1)'),
+          _row(c, 'Build', kAppBuild),
           const SizedBox(height: 12),
-          _row(c, 'Storage', 'On device'),
+          _row(c, 'Storage', 'On this phone only'),
+          const SizedBox(height: 12),
+          _row(c, 'Network', 'Never used'),
           const SizedBox(height: 12),
           _row(c, 'Permissions', 'Notifications, biometrics'),
         ]),

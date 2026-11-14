@@ -52,11 +52,18 @@ five weeks up to a full year.
 an hour before. Tasks and habits get their own, plus one optional summary of the
 day.
 
-**Make it yours.** Six themes, five accent colours, 12- or 24-hour clock, and a
-fingerprint lock if you want one.
+**Make it yours.** Six themes, five accent colours, and a 12- or 24-hour
+clock.
 
-**Your data is yours.** Export everything to a single file you keep, and load it
-back whenever you like.
+**Your data is yours, and hard to lose.** Save everything to a single backup
+file — to Downloads, a Drive folder, wherever you choose — and load it back
+whenever you like. On top of that the app quietly keeps a copy from each of the
+last seven days, so yesterday is always one tap away. Anything you delete can
+be undone for a few seconds, and restoring a backup keeps what it replaced.
+
+**Private.** An optional lock asks for your fingerprint or screen lock when the
+app opens and again after it has been in the background, and hides the app in
+the recent-apps view.
 
 ## Build it yourself
 
