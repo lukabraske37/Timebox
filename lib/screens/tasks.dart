@@ -119,7 +119,8 @@ class TasksScreen extends StatelessWidget {
                                   set: t.time != null,
                                 ),
                                 if (t.time != null)
-                                  Icon(Icons.notifications, size: 16, color: t.done ? c.txt3 : c.txt2),
+                                  Icon(t.alarm ? Icons.alarm : Icons.notifications,
+                                      size: 16, color: t.done ? c.txt3 : c.txt2),
                               ],
                             ),
                           ]),

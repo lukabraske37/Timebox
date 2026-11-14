@@ -48,6 +48,9 @@ red, anything without a date waits at the bottom until you give it one.
 **Habits.** Tick them off daily and watch the streak grow. Charts show the last
 five weeks up to a full year.
 
+**Alarms.** Any reminder can ring as an alarm instead: on the alarm volume, even
+on silent, until you stop it or snooze it for ten minutes.
+
 **Reminders.** Alerts when a block starts or ends, or 15 minutes / half an hour /
 an hour before. Tasks and habits get their own, plus one optional summary of the
 day.

@@ -10,6 +10,22 @@ const String kAppBuild = String.fromEnvironment('BUILD', defaultValue: 'dev');
 
 const int kStep = 5;
 
+/// How long Snooze puts an alarm off for.
+const int kSnoozeMinutes = 10;
+
+/// An alarm put off with Snooze: what to ring for, and when.
+class Snooze {
+  final String title;
+  final DateTime at;
+
+  const Snooze(this.title, this.at);
+
+  Map<String, dynamic> toJson() => {'title': title, 'at': at.toIso8601String()};
+
+  static Snooze fromJson(Map<String, dynamic> j) =>
+      Snooze(j['title'] as String, DateTime.parse(j['at'] as String));
+}
+
 /// The nearest five minute mark.
 int snapToStep(int minutes) => ((minutes + kStep ~/ 2) ~/ kStep) * kStep;
 
@@ -63,6 +79,10 @@ class Block {
   List<String> alerts;
   List<String> subtasks;
 
+  /// Whether this block's alerts ring like an alarm clock — loud, on the alarm
+  /// volume, until stopped — rather than arriving as a quiet notification.
+  bool alarm;
+
   /// Dates this block repeats onto but should not appear on, because the user
   /// changed or removed that one occurrence.
   List<String> skips;
@@ -79,6 +99,7 @@ class Block {
     List<String>? alerts,
     List<String>? subtasks,
     List<String>? skips,
+    this.alarm = false,
   })  : alerts = alerts ?? <String>[],
         subtasks = subtasks ?? <String>[],
         skips = skips ?? <String>[];
@@ -104,6 +125,7 @@ class Block {
         repeat: repeat,
         alerts: List.of(alerts),
         subtasks: List.of(subtasks),
+        alarm: alarm,
       );
 
   Map<String, dynamic> toJson() => {
@@ -118,6 +140,7 @@ class Block {
         'alerts': alerts,
         'subtasks': subtasks,
         'skips': skips,
+        'alarm': alarm,
       };
 
   static Block fromJson(Map<String, dynamic> j) => Block(
@@ -132,6 +155,7 @@ class Block {
         alerts: (j['alerts'] as List?)?.map((e) => e.toString()).toList(),
         subtasks: (j['subtasks'] as List?)?.map((e) => e.toString()).toList(),
         skips: (j['skips'] as List?)?.map((e) => e.toString()).toList(),
+        alarm: j['alarm'] == true,
       );
 }
 
@@ -168,10 +192,13 @@ class Task {
 
   bool done;
 
-  Task({required this.id, required this.title, this.time, this.date, this.done = false});
+  /// Ring as an alarm at [time] instead of sending a notification.
+  bool alarm;
+
+  Task({required this.id, required this.title, this.time, this.date, this.done = false, this.alarm = false});
 
   Map<String, dynamic> toJson() =>
-      {'id': id, 'title': title, 'time': time, 'date': date, 'done': done};
+      {'id': id, 'title': title, 'time': time, 'date': date, 'done': done, 'alarm': alarm};
 
   static Task fromJson(Map<String, dynamic> j) => Task(
         id: j['id'] as String,
@@ -179,6 +206,7 @@ class Task {
         time: (j['time'] as num?)?.toInt(),
         date: j['date'] as String?,
         done: j['done'] as bool? ?? false,
+        alarm: j['alarm'] == true,
       );
 }
 
@@ -189,12 +217,16 @@ class Habit {
   int? time;
   Map<String, bool> history;
 
+  /// Ring as an alarm at [time] instead of sending a notification.
+  bool alarm;
+
   Habit({
     required this.id,
     required this.title,
     this.icon = 'local_fire_department',
     this.time,
     Map<String, bool>? history,
+    this.alarm = false,
   }) : history = history ?? <String, bool>{};
 
   bool doneOn(String key) => history[key] == true;
@@ -216,6 +248,7 @@ class Habit {
         'icon': icon,
         'time': time,
         'history': history,
+        'alarm': alarm,
       };
 
   static Habit fromJson(Map<String, dynamic> j) => Habit(
@@ -224,6 +257,7 @@ class Habit {
         icon: j['icon'] as String? ?? 'local_fire_department',
         time: (j['time'] as num?)?.toInt(),
         history: (j['history'] as Map?)?.map((k, v) => MapEntry(k.toString(), v == true)),
+        alarm: j['alarm'] == true,
       );
 }
 

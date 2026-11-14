@@ -32,12 +32,62 @@ class Notifications {
       const InitializationSettings(
         android: AndroidInitializationSettings('@mipmap/ic_launcher'),
       ),
+      onDidReceiveNotificationResponse: _onResponse,
     );
+    // Snooze can be pressed while the app is not running at all, in which
+    // case the press is what launched it.
+    try {
+      final launch = await _plugin.getNotificationAppLaunchDetails();
+      final response = launch?.notificationResponse;
+      if (launch?.didNotificationLaunchApp == true && response != null) _onResponse(response);
+    } catch (_) {}
     final android = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
     await android?.requestNotificationsPermission();
     await android?.requestExactAlarmsPermission();
     _ready = true;
   }
+
+  /// Set by the store, which owns the list of snoozed alarms.
+  static void Function(String title)? onSnooze;
+
+  static const _snoozeAction = 'snooze';
+  static const _stopAction = 'stop';
+
+  static void _onResponse(NotificationResponse response) {
+    if (response.actionId == _snoozeAction) onSnooze?.call(response.payload ?? 'Alarm');
+  }
+
+  /// An alarm, as opposed to a notification: its own channel on the alarm
+  /// volume, so it sounds through silent mode the way the clock app's does,
+  /// and a sound that keeps going until someone answers it.
+  static final _alarmDetails = NotificationDetails(
+    android: AndroidNotificationDetails(
+      'timebox_alarm',
+      'Timebox alarms',
+      channelDescription: 'Alarms that ring until you stop them',
+      importance: Importance.max,
+      priority: Priority.max,
+      category: AndroidNotificationCategory.alarm,
+      audioAttributesUsage: AudioAttributesUsage.alarm,
+      sound: const UriAndroidNotificationSound('content://settings/system/alarm_alert'),
+      playSound: true,
+      enableVibration: true,
+      vibrationPattern: Int64List.fromList([0, 600, 400, 600, 400, 600]),
+      // FLAG_INSISTENT: repeat the sound until the notification is answered.
+      additionalFlags: Int32List.fromList([4]),
+      fullScreenIntent: true,
+      visibility: NotificationVisibility.public,
+      autoCancel: true,
+      // Nobody there to stop it: give up after ten minutes rather than
+      // ringing an empty room all day.
+      timeoutAfter: 10 * 60 * 1000,
+      actions: const [
+        AndroidNotificationAction(_stopAction, 'Stop', cancelNotification: true),
+        AndroidNotificationAction(_snoozeAction, 'Snooze $kSnoozeMinutes min',
+            cancelNotification: true, showsUserInterface: true),
+      ],
+    ),
+  );
 
   static const _details = NotificationDetails(
     android: AndroidNotificationDetails(
@@ -67,15 +117,26 @@ class Notifications {
     return when.isBefore(tz.TZDateTime.now(tz.local)) ? null : when;
   }
 
-  static Future<void> _schedule(int id, String title, String body, tz.TZDateTime when) async {
+  static Future<void> _schedule(
+    int id,
+    String title,
+    String body,
+    tz.TZDateTime when, {
+    bool alarm = false,
+    bool daily = false,
+  }) async {
     await _plugin.zonedSchedule(
       id,
       title,
       body,
       when,
-      _details,
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      alarm ? _alarmDetails : _details,
+      // An alarm goes through AlarmManager's alarm-clock path, which Android
+      // will not defer for battery saving the way it may an ordinary one.
+      androidScheduleMode: alarm ? AndroidScheduleMode.alarmClock : AndroidScheduleMode.exactAllowWhileIdle,
       uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
+      matchDateTimeComponents: daily ? DateTimeComponents.time : null,
+      payload: title,
     );
   }
 
@@ -85,6 +146,7 @@ class Notifications {
     required List<Block> blocks,
     required List<Task> tasks,
     required List<Habit> habits,
+    List<Snooze> snoozes = const [],
     required bool blocksOn,
     required bool tasksOn,
     required bool habitsOn,
@@ -110,7 +172,8 @@ class Notifications {
             _ => 0,
           };
           await _schedule(id++, b.title, '${fmtMins(b.start, use24)} – ${fmtMins(b.end, use24)}',
-              _next(b.date, b.start + offset));
+              _next(b.date, b.start + offset),
+              alarm: b.alarm);
         }
       }
     }
@@ -119,10 +182,12 @@ class Notifications {
       for (final t in tasks) {
         if (t.done || t.time == null) continue;
         if (t.date == null) {
-          await _schedule(id++, t.title, 'Task due', _next(today, t.time!));
+          await _schedule(id++, t.title, 'Task due', _next(today, t.time!), alarm: t.alarm);
         } else {
           final when = _on(t.date!, t.time!);
-          if (when != null) await _schedule(id++, t.title, 'Due ${dueLabel(t.date!)}', when);
+          if (when != null) {
+            await _schedule(id++, t.title, 'Due ${dueLabel(t.date!)}', when, alarm: t.alarm);
+          }
         }
       }
     }
@@ -130,17 +195,17 @@ class Notifications {
     if (habitsOn) {
       for (final h in habits) {
         if (h.time == null) continue;
-        await _plugin.zonedSchedule(
-          id++,
-          h.title,
-          'Keep the streak going',
-          _next(today, h.time!),
-          _details,
-          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-          uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
-          matchDateTimeComponents: DateTimeComponents.time,
-        );
+        await _schedule(id++, h.title, 'Keep the streak going', _next(today, h.time!),
+            alarm: h.alarm, daily: true);
       }
+    }
+
+    // Snoozed alarms ring whatever the channel switches say: the alarm they
+    // came from was allowed to ring, and Snooze was a request to hear it again.
+    final nowTz = tz.TZDateTime.now(tz.local);
+    for (final z in snoozes) {
+      final when = tz.TZDateTime.from(z.at, tz.local);
+      if (when.isAfter(nowTz)) await _schedule(id++, z.title, 'Snoozed', when, alarm: true);
     }
 
     if (summaryOn) {

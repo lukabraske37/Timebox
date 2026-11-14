@@ -64,6 +64,7 @@ class _BlockSheetState extends State<_BlockSheet> {
   late int _color;
   late String _repeat;
   late List<String> _alerts;
+  bool _alarm = false;
   late List<String> _subtasks;
   bool _fine = false;
   bool _longer = false;
@@ -82,6 +83,7 @@ class _BlockSheetState extends State<_BlockSheet> {
     _color = b?.color ?? 0;
     _repeat = b?.repeat ?? 'Once';
     _alerts = List.of(b?.alerts ?? const ['At start of task']);
+    _alarm = b?.alarm ?? false;
     _subtasks = List.of(b?.subtasks ?? const []);
     _start = b?.start ?? widget.startAt ?? 540;
     if (b == null && widget.fill != null) _dur = widget.fill!;
@@ -127,6 +129,7 @@ class _BlockSheetState extends State<_BlockSheet> {
         repeat: _repeat,
         alerts: _alerts,
         subtasks: _subtasks,
+        alarm: _alarm && _alerts.isNotEmpty,
       ));
     } else {
       store.replaceBlock(Block(
@@ -140,6 +143,7 @@ class _BlockSheetState extends State<_BlockSheet> {
         repeat: _repeat,
         alerts: _alerts,
         subtasks: _subtasks,
+        alarm: _alarm && _alerts.isNotEmpty,
       ));
     }
     Navigator.pop(context);
@@ -291,6 +295,10 @@ class _BlockSheetState extends State<_BlockSheet> {
             ]),
           ),
         ),
+        if (_alerts.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          AlarmChoice(alarm: _alarm, onChanged: (v) => setState(() => _alarm = v)),
+        ],
         const SizedBox(height: 22),
         for (var i = 0; i < _subtasks.length; i++) ...[
           Container(
@@ -441,6 +449,7 @@ class _SimpleSheetState extends State<_SimpleSheet> {
   int _dur = 30;
   bool _longer = false;
   bool _reminder = false;
+  bool _alarm = false;
   int _time = 540;
   String? _date;
 
@@ -458,11 +467,13 @@ class _SimpleSheetState extends State<_SimpleSheet> {
         _reminder = widget.task?.time != null;
         _time = widget.task?.time ?? 540;
         _date = widget.task?.date;
+        _alarm = widget.task?.alarm ?? false;
       case _SimpleKind.habit:
         _title = TextEditingController(text: widget.habit?.title ?? '');
         _icon = widget.habit?.icon ?? 'local_fire_department';
         _reminder = widget.habit?.time != null;
         _time = widget.habit?.time ?? 480;
+        _alarm = widget.habit?.alarm ?? false;
     }
   }
 
@@ -495,17 +506,20 @@ class _SimpleSheetState extends State<_SimpleSheet> {
           time: _reminder ? _time : null,
           date: _date,
           done: widget.task?.done ?? false,
+          alarm: _reminder && _alarm,
         );
         widget.task == null ? store.addTask(t) : store.replaceTask(t);
       case _SimpleKind.habit:
         if (widget.habit == null) {
-          store.addHabit(Habit(id: store.newId(), title: title, icon: _icon, time: _reminder ? _time : null));
+          store.addHabit(Habit(
+              id: store.newId(), title: title, icon: _icon, time: _reminder ? _time : null, alarm: _reminder && _alarm));
         } else {
           store.mutate(() {
             widget.habit!
               ..title = title
               ..icon = _icon
-              ..time = _reminder ? _time : null;
+              ..time = _reminder ? _time : null
+              ..alarm = _reminder && _alarm;
           });
         }
     }
@@ -686,8 +700,8 @@ class _SimpleSheetState extends State<_SimpleSheet> {
                   Text(
                       _reminder
                           ? _date == null
-                              ? 'Notification at ${fmtMins(_time, store.use24)}'
-                              : '${dueLabel(_date!)} at ${fmtMins(_time, store.use24)}'
+                              ? '${_alarm ? 'Alarm' : 'Notification'} at ${fmtMins(_time, store.use24)}'
+                              : '${_alarm ? 'Alarm ' : ''}${dueLabel(_date!)} at ${fmtMins(_time, store.use24)}'
                           : 'Off',
                       style: TextStyle(fontSize: 12, color: c.txt3)),
                 ]),
@@ -705,6 +719,8 @@ class _SimpleSheetState extends State<_SimpleSheet> {
           ),
           if (_reminder) ...[
             const SizedBox(height: 12),
+            AlarmChoice(alarm: _alarm, onChanged: (v) => setState(() => _alarm = v)),
+            const SizedBox(height: 12),
             TimeStepper(
               minutes: _time,
               use24: store.use24,
@@ -718,6 +734,37 @@ class _SimpleSheetState extends State<_SimpleSheet> {
 }
 
 // ---------------------------------------------------------------- shared parts
+
+/// Whether a reminder arrives as a notification or rings as an alarm.
+class AlarmChoice extends StatelessWidget {
+  final bool alarm;
+  final ValueChanged<bool> onChanged;
+
+  const AlarmChoice({super.key, required this.alarm, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = AppScope.colorsOf(context);
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Segmented<bool>(
+        values: const [false, true],
+        labels: const ['Notification', 'Alarm'],
+        value: alarm,
+        onChanged: onChanged,
+      ),
+      const SizedBox(height: 8),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: Text(
+          alarm
+              ? 'Rings on the alarm volume until you stop or snooze it, even on silent.'
+              : 'One quiet notification, at whatever volume the phone is on.',
+          style: TextStyle(fontSize: 12, height: 1.4, color: c.txt3),
+        ),
+      ),
+    ]);
+  }
+}
 
 /// The destructive action at the foot of an editor sheet. Tinted rather than
 /// bare text so it reads as a button and gives the tap somewhere to land.
