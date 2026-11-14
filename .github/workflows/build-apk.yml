@@ -119,6 +119,41 @@ jobs:
           class MainActivity : FlutterFragmentActivity()
           EOF
 
+      - name: Sign with the project's own key, if there is one
+        # Without this every build is signed with a debug key the runner makes
+        # up on the spot, so no two releases share a signature and Android
+        # refuses to install one over another: updating means uninstalling,
+        # and uninstalling takes the user's data with it. With the keystore in
+        # the SIGNING_KEYSTORE_B64 secret every release carries the same
+        # signature and installs straight over the last.
+        env:
+          KEYSTORE_B64: ${{ secrets.SIGNING_KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.SIGNING_KEYSTORE_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_B64" ]; then
+            echo "::warning::No SIGNING_KEYSTORE_B64 secret, so this build is debug-signed and cannot update an installed copy."
+            exit 0
+          fi
+          echo "$KEYSTORE_B64" | base64 -d > android/app/release.jks
+          cat >> android/app/build.gradle.kts <<'EOF'
+
+          android {
+              signingConfigs {
+                  create("timebox") {
+                      storeFile = file("release.jks")
+                      storePassword = System.getenv("KEYSTORE_PASSWORD")
+                      keyAlias = "timebox"
+                      keyPassword = System.getenv("KEYSTORE_PASSWORD")
+                  }
+              }
+              buildTypes {
+                  getByName("release") {
+                      signingConfig = signingConfigs.getByName("timebox")
+                  }
+              }
+          }
+          EOF
+
       - run: flutter pub get
 
       # Build 11 shipped a shell whose navigation bar ate the whole screen, and
@@ -130,9 +165,15 @@ jobs:
       # the network on a cold runner, and any one of those can answer 504 for a
       # few minutes. Give the whole build three goes before calling it broken.
       - name: Build the APK
+        # The run number becomes the version code, so each release is newer
+        # than the last as far as Android is concerned.
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.SIGNING_KEYSTORE_PASSWORD }}
         run: |
           for attempt in 1 2 3; do
-            if flutter build apk --release; then exit 0; fi
+            if flutter build apk --release \
+                --build-number=${{ github.run_number }} \
+                --dart-define=BUILD=${{ github.run_number }}; then exit 0; fi
             echo "::warning::APK build attempt $attempt failed, trying again"
             sleep $((attempt * 60))
           done

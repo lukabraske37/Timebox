@@ -80,8 +80,10 @@ class InboxScreen extends StatelessWidget {
                       ),
                       GestureDetector(
                         onTap: () => openInboxSheet(context, existing: item),
+                        // A full-size target: the pencil alone is 18 pixels.
+                        behavior: HitTestBehavior.opaque,
                         child: Padding(
-                          padding: const EdgeInsets.all(8),
+                          padding: const EdgeInsets.all(13),
                           child: Icon(Icons.edit, size: 18, color: c.txt3),
                         ),
                       ),

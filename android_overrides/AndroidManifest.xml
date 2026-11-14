@@ -8,6 +8,8 @@
 
     <application
         android:label="Timebox"
+        android:allowBackup="true"
+        android:fullBackupContent="true"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

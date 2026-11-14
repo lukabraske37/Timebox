@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -11,6 +12,7 @@ import 'package:timezone/data/latest_all.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 
 import 'models.dart';
+import 'store.dart';
 
 /// Real Android notifications: block alerts, task and habit reminders,
 /// plus one optional daily summary.
@@ -180,24 +182,73 @@ class Biometrics {
   }
 }
 
-/// Backup is one plain JSON file the user keeps themselves — nothing leaves the phone.
+/// Backup is one plain JSON file the user keeps themselves — nothing leaves
+/// the phone unless they send it somewhere.
 class Backup {
-  static Future<void> export(Map<String, dynamic> state) async {
-    final dir = await getTemporaryDirectory();
-    final file = File('${dir.path}/timebox-backup-${todayKey()}.json');
-    await file.writeAsString(const JsonEncoder.withIndent('  ').convert(state));
-    await Share.shareXFiles([XFile(file.path)], subject: 'Timebox backup');
+  static String get _name => 'timebox-backup-${todayKey()}.json';
+
+  static String _encode(Map<String, dynamic> state) => const JsonEncoder.withIndent('  ')
+      .convert({...state, 'app': 'timebox', 'exportedAt': DateTime.now().toIso8601String()});
+
+  /// Lets the user choose where the file goes — Downloads, an SD card, or a
+  /// Drive folder if they have one. Returns whether a file was written.
+  static Future<bool> saveToDevice(Map<String, dynamic> state) async {
+    try {
+      final path = await FilePicker.platform.saveFile(
+        dialogTitle: 'Save Timebox backup',
+        fileName: _name,
+        type: FileType.custom,
+        allowedExtensions: const ['json'],
+        bytes: Uint8List.fromList(utf8.encode(_encode(state))),
+      );
+      return path != null;
+    } catch (_) {
+      return false;
+    }
   }
 
-  static Future<Map<String, dynamic>?> import() async {
-    final res = await FilePicker.platform.pickFiles(type: FileType.any);
-    final path = res?.files.single.path;
-    if (path == null) return null;
+  /// Hands the file to another app: mail, Drive, a chat with yourself.
+  static Future<bool> share(Map<String, dynamic> state) async {
     try {
-      final text = await File(path).readAsString();
-      return jsonDecode(text) as Map<String, dynamic>;
+      final dir = await getTemporaryDirectory();
+      final file = File('${dir.path}/$_name');
+      await file.writeAsString(_encode(state));
+      final result = await Share.shareXFiles([XFile(file.path)], subject: 'Timebox backup');
+      return result.status == ShareResultStatus.success;
     } catch (_) {
-      return null;
+      return false;
     }
+  }
+
+  /// The picked file's contents, null if nothing was picked, or an error when
+  /// the file is not something this app wrote.
+  static Future<({Map<String, dynamic>? data, String? error})?> pick() async {
+    final FilePickerResult? res;
+    try {
+      res = await FilePicker.platform.pickFiles(type: FileType.any, withData: true);
+    } catch (_) {
+      return (data: null, error: 'The file picker could not be opened.');
+    }
+    if (res == null || res.files.isEmpty) return null;
+    final picked = res.files.single;
+    try {
+      final bytes = picked.bytes ?? await File(picked.path!).readAsBytes();
+      // A backup is a few hundred kilobytes at most; anything huge is the
+      // wrong file, and reading it whole would only stall the app.
+      if (bytes.length > 20 * 1024 * 1024) {
+        return (data: null, error: 'That file is too large to be a Timebox backup.');
+      }
+      return parse(utf8.decode(bytes));
+    } catch (_) {
+      return (data: null, error: 'That file could not be read.');
+    }
+  }
+
+  static ({Map<String, dynamic>? data, String? error}) parse(String text) {
+    try {
+      final data = jsonDecode(text);
+      if (data is Map<String, dynamic> && Store.looksLikeBackup(data)) return (data: data, error: null);
+    } catch (_) {}
+    return (data: null, error: 'That is not a Timebox backup file.');
   }
 }

@@ -4,6 +4,10 @@ library;
 /// Times move in five minute steps everywhere — the wheels, the steppers, the
 /// nudges on the action bar. A start that falls off that grid can never be
 /// brought back onto it, since every step keeps the same remainder.
+/// Shown in Settings. The build number is stamped in by the release workflow.
+const String kAppVersion = '1.1';
+const String kAppBuild = String.fromEnvironment('BUILD', defaultValue: 'dev');
+
 const int kStep = 5;
 
 /// The nearest five minute mark.

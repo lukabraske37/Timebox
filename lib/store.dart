@@ -10,6 +10,34 @@ import 'services.dart';
 const _key = 'timebox.state';
 const _schema = 1;
 
+/// The state as it last loaded cleanly — the first thing to fall back on if
+/// the main copy ever fails to parse.
+const _bakKey = 'timebox.state.bak';
+
+/// Whatever was on disk when a load failed, kept untouched so nothing is ever
+/// thrown away just because this version could not read it.
+const _corruptKey = 'timebox.state.corrupt';
+
+/// One copy of the state per day it was opened, newest [kSnapshotsKept] kept.
+const _snapPrefix = 'timebox.snap.';
+const _beforeRestore = 'before-restore';
+const int kSnapshotsKept = 7;
+
+/// A saved copy the user can go back to.
+class Snapshot {
+  /// A date key, or [_beforeRestore] for the copy taken just before the last
+  /// restore replaced everything.
+  final String id;
+  final int blocks;
+  final int tasks;
+  final int habits;
+  final int inbox;
+
+  const Snapshot(this.id, this.blocks, this.tasks, this.habits, this.inbox);
+
+  bool get isBeforeRestore => id == _beforeRestore;
+}
+
 /// Vertical pixels per minute for each zoom step.
 const Map<String, double> kZoom = {'compact': 0.45, 'normal': 0.85, 'roomy': 1.5};
 
@@ -71,6 +99,20 @@ class Store extends ChangeNotifier {
   int summaryTime = 1260;
   String habitRange = '5w';
 
+  /// When a backup file was last written out of the app, as an ISO timestamp.
+  String? lastBackupAt;
+
+  /// Set when loading had to fall back on an older copy, so the app can say so
+  /// instead of quietly showing data that is a day behind.
+  String? loadNotice;
+
+  /// Called after something was removed that [undo] can bring back.
+  void Function(String label)? onUndoable;
+  String? _undoState;
+
+  /// When the app last went to the background, for deciding whether to lock.
+  DateTime? _leftAt;
+
   /// The calendar day the view is anchored to, so a day change can be told
   /// apart from the user simply browsing to another date.
   String _viewDay = todayKey();
@@ -79,7 +121,11 @@ class Store extends ChangeNotifier {
   Timer? _saveTimer;
   SharedPreferences? _prefs;
 
-  Store() {
+  /// Tests switch notifications off: the scheduler talks to Android, and
+  /// there is no Android under a unit test to answer it.
+  final bool notifications;
+
+  Store({this.notifications = true}) {
     selected = DateTime.now();
   }
 
@@ -100,11 +146,24 @@ class Store extends ChangeNotifier {
     final raw = _prefs!.getString(_key);
     if (raw == null) {
       _seedDemo();
+    } else if (_tryLoad(raw)) {
+      // It read cleanly, so it becomes the copy to fall back on next time.
+      await _prefs!.setString(_bakKey, raw);
+      await _snapshot(todayKey(), raw, overwrite: false);
     } else {
-      try {
-        _fromJson(jsonDecode(raw) as Map<String, dynamic>);
-      } catch (_) {
-        _seedDemo();
+      // Never overwrite what could not be read: park it, then work back
+      // through the older copies until one loads.
+      await _prefs!.setString(_corruptKey, raw);
+      final older = <String?>[
+        _prefs!.getString(_bakKey),
+        for (final snap in snapshots()) _prefs!.getString('$_snapPrefix${snap.id}'),
+      ];
+      final recovered = older.any((copy) => copy != null && _tryLoad(copy));
+      if (recovered) {
+        loadNotice = 'Your latest save could not be read, so an earlier copy was restored.';
+      } else {
+        _clearContent();
+        loadNotice = 'Your saved data could not be read. It has been kept aside, not deleted.';
       }
     }
     _viewDay = todayKey();
@@ -112,8 +171,27 @@ class Store extends ChangeNotifier {
     locked = booted && biometric;
     _tick = Timer.periodic(const Duration(seconds: 20), (_) => _onTick());
     notifyListeners();
+    if (!notifications) return;
     await Notifications.init();
     _syncNotifications();
+  }
+
+  bool _tryLoad(String raw) {
+    try {
+      final data = jsonDecode(raw);
+      if (data is! Map<String, dynamic>) return false;
+      _fromJson(data);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  void _clearContent() {
+    blocks = [];
+    inbox = [];
+    tasks = [];
+    habits = [];
   }
 
   @override
@@ -168,41 +246,214 @@ class Store extends ChangeNotifier {
         'dailySummary': dailySummary,
         'summaryTime': summaryTime,
         'habitRange': habitRange,
+        'lastBackupAt': lastBackupAt,
       };
 
+  /// One entry that will not parse is dropped on its own rather than taking
+  /// the whole list — and with it the whole load — down with it.
+  static List<T> _list<T>(Object? raw, T Function(Map<String, dynamic>) parse) {
+    final out = <T>[];
+    if (raw is! List) return out;
+    for (final e in raw) {
+      try {
+        out.add(parse(Map<String, dynamic>.from(e as Map)));
+      } catch (_) {}
+    }
+    return out;
+  }
+
+  static bool _flag(Object? v, bool fallback) => v is bool ? v : fallback;
+  static String _text(Object? v, String fallback) => v is String ? v : fallback;
+
   void _fromJson(Map<String, dynamic> j) {
-    booted = j['booted'] as bool? ?? false;
-    blocks = ((j['blocks'] as List?) ?? []).map((e) => Block.fromJson(e as Map<String, dynamic>)).toList();
-    inbox = ((j['inbox'] as List?) ?? []).map((e) => InboxItem.fromJson(e as Map<String, dynamic>)).toList();
-    tasks = ((j['tasks'] as List?) ?? []).map((e) => Task.fromJson(e as Map<String, dynamic>)).toList();
-    habits = ((j['habits'] as List?) ?? []).map((e) => Habit.fromJson(e as Map<String, dynamic>)).toList();
-    theme = j['theme'] as String? ?? 'dark';
-    accent = j['accent'] as String? ?? 'teal';
-    use24 = j['use24'] as bool? ?? false;
-    sundayFirst = j['sundayFirst'] as bool? ?? false;
-    habitsFirst = j['habitsFirst'] as bool? ?? false;
-    blockColorIcons = j['blockColorIcons'] as bool? ?? true;
-    classicTimeline = j['classicTimeline'] as bool? ?? false;
-    zoom = j['zoom'] as String? ?? 'normal';
-    biometric = j['biometric'] as bool? ?? false;
-    notifBlocks = j['notifBlocks'] as bool? ?? true;
-    notifTasks = j['notifTasks'] as bool? ?? true;
-    notifHabits = j['notifHabits'] as bool? ?? true;
-    dailySummary = j['dailySummary'] as bool? ?? false;
-    summaryTime = (j['summaryTime'] as num?)?.toInt() ?? 1260;
-    habitRange = j['habitRange'] as String? ?? '5w';
-    if (blocks.isEmpty && inbox.isEmpty && tasks.isEmpty && habits.isEmpty) _seedDemo();
+    booted = _flag(j['booted'], false);
+    blocks = _list(j['blocks'], Block.fromJson);
+    inbox = _list(j['inbox'], InboxItem.fromJson);
+    tasks = _list(j['tasks'], Task.fromJson);
+    habits = _list(j['habits'], Habit.fromJson);
+    theme = _text(j['theme'], 'dark');
+    accent = _text(j['accent'], 'teal');
+    use24 = _flag(j['use24'], false);
+    sundayFirst = _flag(j['sundayFirst'], false);
+    habitsFirst = _flag(j['habitsFirst'], false);
+    blockColorIcons = _flag(j['blockColorIcons'], true);
+    classicTimeline = _flag(j['classicTimeline'], false);
+    zoom = kZoom.containsKey(j['zoom']) ? j['zoom'] as String : 'normal';
+    biometric = _flag(j['biometric'], false);
+    notifBlocks = _flag(j['notifBlocks'], true);
+    notifTasks = _flag(j['notifTasks'], true);
+    notifHabits = _flag(j['notifHabits'], true);
+    dailySummary = _flag(j['dailySummary'], false);
+    final summary = j['summaryTime'];
+    summaryTime = summary is num ? summary.toInt().clamp(0, 1439) : 1260;
+    habitRange = kRanges.any((r) => r.key == j['habitRange']) ? j['habitRange'] as String : '5w';
+    lastBackupAt = j['lastBackupAt'] is String ? j['lastBackupAt'] as String : null;
   }
 
   void save() {
     _saveTimer?.cancel();
-    _saveTimer = Timer(const Duration(milliseconds: 250), () {
-      _prefs?.setString(_key, jsonEncode(toJson()));
-      _syncNotifications();
+    _saveTimer = Timer(const Duration(milliseconds: 250), _writeNow);
+  }
+
+  void _writeNow() {
+    _saveTimer?.cancel();
+    _saveTimer = null;
+    _prefs?.setString(_key, jsonEncode(toJson()));
+    _syncNotifications();
+  }
+
+  /// Writes anything still waiting on the save timer. Android may kill the
+  /// app the moment it leaves the screen, so this runs on the way out.
+  void flush() {
+    if (_saveTimer != null) _writeNow();
+  }
+
+  // ---------- copies to go back to ----------
+
+  Future<void> _snapshot(String id, String raw, {bool overwrite = true}) async {
+    final prefs = _prefs;
+    if (prefs == null) return;
+    final key = '$_snapPrefix$id';
+    if (!overwrite && prefs.containsKey(key)) return;
+    await prefs.setString(key, raw);
+    // Date keys sort oldest first, so everything before the last few goes.
+    final dated = prefs.getKeys().where((k) => k.startsWith(_snapPrefix) && !k.endsWith(_beforeRestore)).toList()
+      ..sort();
+    for (final old in dated.take((dated.length - kSnapshotsKept).clamp(0, dated.length))) {
+      await prefs.remove(old);
+    }
+  }
+
+  /// Saved copies, newest first, with the one taken before the last restore
+  /// at the top.
+  List<Snapshot> snapshots() {
+    final prefs = _prefs;
+    if (prefs == null) return [];
+    final ids = prefs.getKeys().where((k) => k.startsWith(_snapPrefix)).map((k) => k.substring(_snapPrefix.length)).toList()
+      ..sort((a, b) => a == _beforeRestore ? -1 : (b == _beforeRestore ? 1 : b.compareTo(a)));
+    final out = <Snapshot>[];
+    for (final id in ids) {
+      try {
+        final j = jsonDecode(prefs.getString('$_snapPrefix$id')!) as Map<String, dynamic>;
+        int n(String k) => j[k] is List ? (j[k] as List).length : 0;
+        out.add(Snapshot(id, n('blocks'), n('tasks'), n('habits'), n('inbox')));
+      } catch (_) {}
+    }
+    return out;
+  }
+
+  Future<bool> restoreSnapshot(String id) async {
+    final raw = _prefs?.getString('$_snapPrefix$id');
+    if (raw == null) return false;
+    try {
+      return await restore(jsonDecode(raw) as Map<String, dynamic>);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Whether [data] is recognisably a Timebox backup rather than some other
+  /// JSON file picked by mistake.
+  static bool looksLikeBackup(Object? data) {
+    if (data is! Map) return false;
+    const lists = ['blocks', 'inbox', 'tasks', 'habits'];
+    return lists.any((k) => data[k] is List) && lists.every((k) => data[k] == null || data[k] is List);
+  }
+
+  /// How many of each thing a backup holds, for showing before it is restored.
+  static ({int blocks, int tasks, int habits, int inbox}) countsIn(Map<String, dynamic> data) {
+    int n(String k) => data[k] is List ? (data[k] as List).length : 0;
+    return (blocks: n('blocks'), tasks: n('tasks'), habits: n('habits'), inbox: n('inbox'));
+  }
+
+  /// Replaces everything with [data]. What was there is kept as a snapshot
+  /// first, so a restore from the wrong file can itself be undone.
+  Future<bool> restore(Map<String, dynamic> data) async {
+    if (!looksLikeBackup(data)) return false;
+    await _snapshot(_beforeRestore, jsonEncode(toJson()));
+    // The lock belongs to this phone, not to the file being loaded.
+    final lock = biometric;
+    _fromJson(data);
+    biometric = lock;
+    _viewDay = todayKey();
+    booted = true;
+    selectedBlockId = null;
+    _undoState = null;
+    notifyListeners();
+    _writeNow();
+    return true;
+  }
+
+  /// Wipes blocks, tasks, habits and the inbox, keeping settings. A snapshot
+  /// is taken first.
+  Future<void> eraseAll() async {
+    await _snapshot(_beforeRestore, jsonEncode(toJson()));
+    mutate(() {
+      _clearContent();
+      selectedBlockId = null;
+      _undoState = null;
     });
   }
 
+  void markBackedUp() => mutate(() => lastBackupAt = DateTime.now().toIso8601String());
+
+  /// Whole days since a backup file last left the app, or null if never.
+  int? get daysSinceBackup {
+    final at = lastBackupAt == null ? null : DateTime.tryParse(lastBackupAt!);
+    return at == null ? null : DateTime.now().difference(at).inDays;
+  }
+
+  // ---------- undo ----------
+
+  /// Remembers the content as it stands, then tells the app there is
+  /// something to undo. Call it just before removing anything.
+  void _undoable(String label) {
+    _undoState = jsonEncode({
+      'blocks': blocks.map((b) => b.toJson()).toList(),
+      'inbox': inbox.map((b) => b.toJson()).toList(),
+      'tasks': tasks.map((b) => b.toJson()).toList(),
+      'habits': habits.map((b) => b.toJson()).toList(),
+    });
+    onUndoable?.call(label);
+  }
+
+  bool get canUndo => _undoState != null;
+
+  /// Puts back whatever the last removal took away.
+  void undo() {
+    final raw = _undoState;
+    if (raw == null) return;
+    _undoState = null;
+    final j = jsonDecode(raw) as Map<String, dynamic>;
+    mutate(() {
+      blocks = _list(j['blocks'], Block.fromJson);
+      inbox = _list(j['inbox'], InboxItem.fromJson);
+      tasks = _list(j['tasks'], Task.fromJson);
+      habits = _list(j['habits'], Habit.fromJson);
+    });
+  }
+
+  // ---------- lock ----------
+
+  /// Away for longer than this and the lock comes back on.
+  static const lockAfter = Duration(seconds: 30);
+
+  void leftApp() {
+    flush();
+    _leftAt ??= DateTime.now();
+  }
+
+  void cameBack() {
+    final left = _leftAt;
+    _leftAt = null;
+    if (biometric && booted && left != null && DateTime.now().difference(left) >= lockAfter) {
+      locked = true;
+    }
+    syncToToday();
+  }
+
   void _syncNotifications() {
+    if (!notifications) return;
     // Repeating blocks only exist as copies on the days they land on, so hand
     // the scheduler the next few days as they are actually planned.
     final upcoming = <Block>[];
@@ -226,22 +477,6 @@ class Store extends ChangeNotifier {
     fn();
     notifyListeners();
     save();
-  }
-
-  Future<void> restore(Map<String, dynamic> data) async {
-    _fromJson(data);
-    _viewDay = todayKey();
-    booted = true;
-    notifyListeners();
-    save();
-  }
-
-  void resetDemo() {
-    mutate(() {
-      _seedDemo();
-      booted = true;
-      selectedBlockId = null;
-    });
   }
 
   // ---------- days ----------
@@ -476,7 +711,9 @@ class Store extends ChangeNotifier {
         b.end = snapToStep(b.end + minutes).clamp(b.start + kStep, 1440);
       });
 
-  void deleteBlock(String id) => mutate(() {
+  void deleteBlock(String id) {
+    _undoable('Block deleted');
+    mutate(() {
         if (id.contains(kOccurrenceMark)) {
           // Dropping one occurrence only takes that day out of the series.
           final parts = id.split(kOccurrenceMark);
@@ -489,6 +726,7 @@ class Store extends ChangeNotifier {
         }
         if (selectedBlockId == id) selectedBlockId = null;
       });
+  }
 
   void addBlock(Block b) => mutate(() => blocks.add(b));
 
@@ -529,22 +767,35 @@ class Store extends ChangeNotifier {
         final idx = inbox.indexWhere((x) => x.id == i.id);
         if (idx >= 0) inbox[idx] = i;
       });
-  void deleteInbox(String id) => mutate(() => inbox.removeWhere((x) => x.id == id));
+  void deleteInbox(String id) {
+    _undoable('Removed from Inbox');
+    mutate(() => inbox.removeWhere((x) => x.id == id));
+  }
 
   void addTask(Task t) => mutate(() => tasks.add(t));
   void replaceTask(Task t) => mutate(() {
         final i = tasks.indexWhere((x) => x.id == t.id);
         if (i >= 0) tasks[i] = t;
       });
-  void deleteTask(String id) => mutate(() => tasks.removeWhere((x) => x.id == id));
+  void deleteTask(String id) {
+    _undoable('Task deleted');
+    mutate(() => tasks.removeWhere((x) => x.id == id));
+  }
   void toggleTask(String id) => mutate(() {
         final t = tasks.firstWhereOrNull((x) => x.id == id);
         if (t != null) t.done = !t.done;
       });
-  void clearDoneTasks() => mutate(() => tasks.removeWhere((t) => t.done));
+  void clearDoneTasks() {
+    if (!tasks.any((t) => t.done)) return;
+    _undoable('Completed tasks cleared');
+    mutate(() => tasks.removeWhere((t) => t.done));
+  }
 
   void addHabit(Habit h) => mutate(() => habits.add(h));
-  void deleteHabit(String id) => mutate(() => habits.removeWhere((x) => x.id == id));
+  void deleteHabit(String id) {
+    _undoable('Habit deleted');
+    mutate(() => habits.removeWhere((x) => x.id == id));
+  }
   void toggleHabit(String id, String day) => mutate(() {
         final h = habits.firstWhereOrNull((x) => x.id == id);
         if (h == null) return;
