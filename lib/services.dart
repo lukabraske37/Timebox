@@ -157,6 +157,10 @@ class Notifications {
     return when.isAfter(DateTime.now()) ? when : _moment(dateKey(DateTime.now().add(const Duration(days: 1))), minutes);
   }
 
+  /// Why the last attempt to schedule something failed, if it did. Shown in
+  /// Settings: an alert that silently never fires is the worst kind.
+  static String? lastError;
+
   static Future<void> _schedule(
     int id,
     String title,
@@ -188,7 +192,9 @@ class Notifications {
             uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
             matchDateTimeComponents: daily ? DateTimeComponents.time : null,
             payload: title);
-      } catch (_) {}
+      } catch (e) {
+        lastError = e.toString();
+      }
     }
   }
 
@@ -240,9 +246,16 @@ class Notifications {
 
   /// Rings in a few seconds, so the sound and the buttons can be tried
   /// without waiting for a real reminder.
-  static Future<void> test({required bool alarm, int seconds = 5}) async {
-    await init();
-    await _plugin.cancel(_testId);
+  ///
+  /// Returns what went wrong, or null if the alert is on its way.
+  static Future<String?> test({required bool alarm, int seconds = 5}) async {
+    try {
+      await init();
+      await _plugin.cancel(_testId);
+    } catch (e) {
+      return e.toString();
+    }
+    lastError = null;
     await _schedule(
       _testId,
       alarm ? 'Test alarm' : 'Test notification',
@@ -250,6 +263,7 @@ class Notifications {
       DateTime.now().add(Duration(seconds: seconds)),
       alarm: alarm,
     );
+    return lastError;
   }
 
   // ---------- sync ----------
