@@ -99,9 +99,6 @@ class Store extends ChangeNotifier {
   int summaryTime = 1260;
   String habitRange = '5w';
 
-  /// Alarms put off with Snooze that have not rung again yet.
-  List<Snooze> snoozes = [];
-
   /// When a backup file was last written out of the app, as an ISO timestamp.
   String? lastBackupAt;
 
@@ -175,7 +172,6 @@ class Store extends ChangeNotifier {
     _tick = Timer.periodic(const Duration(seconds: 20), (_) => _onTick());
     notifyListeners();
     if (!notifications) return;
-    Notifications.onSnooze = snooze;
     await Notifications.init();
     _syncNotifications();
   }
@@ -251,7 +247,6 @@ class Store extends ChangeNotifier {
         'summaryTime': summaryTime,
         'habitRange': habitRange,
         'lastBackupAt': lastBackupAt,
-        'snoozes': snoozes.map((z) => z.toJson()).toList(),
       };
 
   /// One entry that will not parse is dropped on its own rather than taking
@@ -293,7 +288,6 @@ class Store extends ChangeNotifier {
     summaryTime = summary is num ? summary.toInt().clamp(0, 1439) : 1260;
     habitRange = kRanges.any((r) => r.key == j['habitRange']) ? j['habitRange'] as String : '5w';
     lastBackupAt = j['lastBackupAt'] is String ? j['lastBackupAt'] as String : null;
-    snoozes = _list(j['snoozes'], Snooze.fromJson)..removeWhere((z) => !z.at.isAfter(DateTime.now()));
   }
 
   void save() {
@@ -409,15 +403,6 @@ class Store extends ChangeNotifier {
     return at == null ? null : DateTime.now().difference(at).inDays;
   }
 
-  /// Rings [title] again in [kSnoozeMinutes]. Kept in the saved state so the
-  /// alarm survives the re-scheduling every save does.
-  void snooze(String title) => mutate(() {
-        final now = DateTime.now();
-        snoozes
-          ..removeWhere((z) => !z.at.isAfter(now) || z.title == title)
-          ..add(Snooze(title, now.add(const Duration(minutes: kSnoozeMinutes))));
-      });
-
   // ---------- undo ----------
 
   /// Remembers the content as it stands, then tells the app there is
@@ -479,7 +464,6 @@ class Store extends ChangeNotifier {
       blocks: upcoming,
       tasks: tasks,
       habits: habits,
-      snoozes: snoozes,
       blocksOn: notifBlocks,
       tasksOn: notifTasks,
       habitsOn: notifHabits,
