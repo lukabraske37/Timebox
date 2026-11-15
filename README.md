@@ -49,7 +49,9 @@ red, anything without a date waits at the bottom until you give it one.
 five weeks up to a full year.
 
 **Alarms.** Any reminder can ring as an alarm instead: on the alarm volume, even
-on silent, until you stop it or snooze it for ten minutes.
+on silent, until you stop it or snooze it for ten minutes. Every alert is set to
+the minute, each one chooses for itself whether it rings, and Settings has a
+button to try a notification or an alarm on the spot.
 
 **Reminders.** Alerts when a block starts or ends, or 15 minutes / half an hour /
 an hour before. Tasks and habits get their own, plus one optional summary of the

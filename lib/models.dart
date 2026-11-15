@@ -5,7 +5,7 @@ library;
 /// nudges on the action bar. A start that falls off that grid can never be
 /// brought back onto it, since every step keeps the same remainder.
 /// Shown in Settings. The build number is stamped in by the release workflow.
-const String kAppVersion = '1.1';
+const String kAppVersion = '1.2';
 const String kAppBuild = String.fromEnvironment('BUILD', defaultValue: 'dev');
 
 const int kStep = 5;
@@ -13,17 +13,33 @@ const int kStep = 5;
 /// How long Snooze puts an alarm off for.
 const int kSnoozeMinutes = 10;
 
-/// An alarm put off with Snooze: what to ring for, and when.
-class Snooze {
-  final String title;
-  final DateTime at;
+/// An alert on a block is stored as the sentence the editor shows for it.
+const String kAtStart = 'At start of task';
+const String kAtEnd = 'At end of task';
 
-  const Snooze(this.title, this.at);
+/// The sentence for an alert [before] minutes ahead of the start.
+String alertLabel(int before) {
+  if (before <= 0) return kAtStart;
+  final h = before ~/ 60, m = before % 60;
+  return '${h > 0 ? '${h}h' : ''}${h > 0 && m > 0 ? ' ' : ''}${m > 0 ? '${m}m' : ''} before start';
+}
 
-  Map<String, dynamic> toJson() => {'title': title, 'at': at.toIso8601String()};
+/// Minutes ahead of the start that [alert] fires, or null for one that fires
+/// at the end. Reads every label the app has ever written, old presets
+/// included.
+int? alertBefore(String alert) {
+  if (alert == kAtEnd) return null;
+  final m = RegExp(r'^(?:(\d+)h)? ?(?:(\d+)m)? before start$').firstMatch(alert);
+  if (m == null) return 0;
+  return (int.tryParse(m.group(1) ?? '') ?? 0) * 60 + (int.tryParse(m.group(2) ?? '') ?? 0);
+}
 
-  static Snooze fromJson(Map<String, dynamic> j) =>
-      Snooze(j['title'] as String, DateTime.parse(j['at'] as String));
+/// When [alert] fires for a block starting at [start] and running [duration]
+/// minutes, in minutes past midnight of the block's day. May be negative: an
+/// hour before a 00:30 start falls on the evening before.
+int alertTime(String alert, int start, int duration) {
+  final before = alertBefore(alert);
+  return before == null ? start + duration : start - before;
 }
 
 /// The nearest five minute mark.
@@ -79,9 +95,11 @@ class Block {
   List<String> alerts;
   List<String> subtasks;
 
-  /// Whether this block's alerts ring like an alarm clock — loud, on the alarm
-  /// volume, until stopped — rather than arriving as a quiet notification.
-  bool alarm;
+  /// Which of [alerts] ring like an alarm clock — loud, on the alarm volume,
+  /// until stopped — rather than arriving as a quiet notification.
+  List<String> rings;
+
+  bool get alarm => rings.isNotEmpty;
 
   /// Dates this block repeats onto but should not appear on, because the user
   /// changed or removed that one occurrence.
@@ -99,8 +117,9 @@ class Block {
     List<String>? alerts,
     List<String>? subtasks,
     List<String>? skips,
-    this.alarm = false,
+    List<String>? rings,
   })  : alerts = alerts ?? <String>[],
+        rings = rings ?? <String>[],
         subtasks = subtasks ?? <String>[],
         skips = skips ?? <String>[];
 
@@ -125,7 +144,7 @@ class Block {
         repeat: repeat,
         alerts: List.of(alerts),
         subtasks: List.of(subtasks),
-        alarm: alarm,
+        rings: List.of(rings),
       );
 
   Map<String, dynamic> toJson() => {
@@ -140,7 +159,7 @@ class Block {
         'alerts': alerts,
         'subtasks': subtasks,
         'skips': skips,
-        'alarm': alarm,
+        'rings': rings,
       };
 
   static Block fromJson(Map<String, dynamic> j) => Block(
@@ -155,7 +174,9 @@ class Block {
         alerts: (j['alerts'] as List?)?.map((e) => e.toString()).toList(),
         subtasks: (j['subtasks'] as List?)?.map((e) => e.toString()).toList(),
         skips: (j['skips'] as List?)?.map((e) => e.toString()).toList(),
-        alarm: j['alarm'] == true,
+        // Build 32 had one switch for the whole block; it meant every alert.
+        rings: (j['rings'] as List?)?.map((e) => e.toString()).toList() ??
+            (j['alarm'] == true ? (j['alerts'] as List?)?.map((e) => e.toString()).toList() : null),
       );
 }
 

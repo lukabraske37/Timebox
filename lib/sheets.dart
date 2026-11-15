@@ -12,13 +12,6 @@ import 'ui.dart';
 // the app can reach.
 const List<int> kDurations = [5, 15, 30, 45, 60, 90];
 const List<String> kRepeats = ['Once', 'Daily', 'Weekly', 'Monthly'];
-const List<String> kAlertPool = [
-  'At start of task',
-  'At end of task',
-  '15m before start',
-  '30m before start',
-  '1h before start',
-];
 
 Future<void> _sheet(BuildContext context, Widget child) {
   final c = AppScope.colorsOf(context);
@@ -64,7 +57,7 @@ class _BlockSheetState extends State<_BlockSheet> {
   late int _color;
   late String _repeat;
   late List<String> _alerts;
-  bool _alarm = false;
+  late Set<String> _rings;
   late List<String> _subtasks;
   bool _fine = false;
   bool _longer = false;
@@ -83,7 +76,7 @@ class _BlockSheetState extends State<_BlockSheet> {
     _color = b?.color ?? 0;
     _repeat = b?.repeat ?? 'Once';
     _alerts = List.of(b?.alerts ?? const ['At start of task']);
-    _alarm = b?.alarm ?? false;
+    _rings = {...?b?.rings};
     _subtasks = List.of(b?.subtasks ?? const []);
     _start = b?.start ?? widget.startAt ?? 540;
     if (b == null && widget.fill != null) _dur = widget.fill!;
@@ -129,7 +122,7 @@ class _BlockSheetState extends State<_BlockSheet> {
         repeat: _repeat,
         alerts: _alerts,
         subtasks: _subtasks,
-        alarm: _alarm && _alerts.isNotEmpty,
+        rings: _alerts.where(_rings.contains).toList(),
       ));
     } else {
       store.replaceBlock(Block(
@@ -143,10 +136,34 @@ class _BlockSheetState extends State<_BlockSheet> {
         repeat: _repeat,
         alerts: _alerts,
         subtasks: _subtasks,
-        alarm: _alarm && _alerts.isNotEmpty,
+        rings: _alerts.where(_rings.contains).toList(),
       ));
     }
     Navigator.pop(context);
+  }
+
+  /// Opens the editor for [existing], or for a new alert when null.
+  Future<void> _editAlert(String? existing) async {
+    final result = await showDialog<({String label, bool ring})>(
+      context: context,
+      builder: (_) => AlertEditor(
+        label: existing ?? (_alerts.contains(kAtStart) ? alertLabel(15) : kAtStart),
+        ring: existing != null && _rings.contains(existing),
+        start: _start,
+        duration: _dur,
+      ),
+    );
+    if (result == null || !mounted) return;
+    setState(() {
+      // Two alerts at the same moment would only ring twice, so the edited
+      // one replaces any other that says the same thing.
+      final at = existing == null ? _alerts.length : _alerts.indexOf(existing);
+      _alerts.remove(existing);
+      _rings.remove(existing);
+      _alerts.remove(result.label);
+      _alerts.insert(at.clamp(0, _alerts.length), result.label);
+      result.ring ? _rings.add(result.label) : _rings.remove(result.label);
+    });
   }
 
   @override
@@ -260,28 +277,41 @@ class _BlockSheetState extends State<_BlockSheet> {
         FieldLabel('Needs alerts?'),
         const SizedBox(height: 12),
         for (final a in _alerts) ...[
-          Container(
-            margin: const EdgeInsets.only(bottom: 8),
-            padding: const EdgeInsets.fromLTRB(14, 13, 8, 13),
-            decoration: BoxDecoration(color: c.surf2, borderRadius: BorderRadius.circular(16)),
-            child: Row(children: [
-              Icon(Icons.notifications_active, size: 19, color: c.acc),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(a, style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600, color: c.txt)),
-              ),
-              GestureDetector(
-                onTap: () => setState(() => _alerts.remove(a)),
-                child: Icon(Icons.close, size: 18, color: c.txt3),
-              ),
-            ]),
+          // Tap a row to set exactly when it fires and whether it rings.
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => _editAlert(a),
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.fromLTRB(14, 6, 2, 6),
+              decoration: BoxDecoration(color: c.surf2, borderRadius: BorderRadius.circular(16)),
+              child: Row(children: [
+                Icon(_rings.contains(a) ? Icons.alarm : Icons.notifications_active, size: 19, color: c.acc),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(a, style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600, color: c.txt)),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${_rings.contains(a) ? 'Alarm' : 'Notification'} · '
+                      '${fmtMins(alertTime(a, _start, _dur) % 1440, store.use24)}',
+                      style: TextStyle(fontSize: 12, color: c.txt3),
+                    ),
+                  ]),
+                ),
+                IconButton(
+                  onPressed: () => setState(() {
+                    _alerts.remove(a);
+                    _rings.remove(a);
+                  }),
+                  icon: Icon(Icons.close, size: 18, color: c.txt3),
+                ),
+              ]),
+            ),
           ),
         ],
         GestureDetector(
-          onTap: () {
-            final next = kAlertPool.firstWhere((a) => !_alerts.contains(a), orElse: () => '');
-            if (next.isNotEmpty) setState(() => _alerts.add(next));
-          },
+          onTap: () => _editAlert(null),
           child: Container(
             padding: const EdgeInsets.symmetric(vertical: 12),
             decoration: BoxDecoration(
@@ -295,10 +325,6 @@ class _BlockSheetState extends State<_BlockSheet> {
             ]),
           ),
         ),
-        if (_alerts.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          AlarmChoice(alarm: _alarm, onChanged: (v) => setState(() => _alarm = v)),
-        ],
         const SizedBox(height: 22),
         for (var i = 0; i < _subtasks.length; i++) ...[
           Container(
@@ -735,6 +761,138 @@ class _SimpleSheetState extends State<_SimpleSheet> {
 
 // ---------------------------------------------------------------- shared parts
 
+/// Sets one alert on a block: when it fires, to the minute, and whether it
+/// arrives as a notification or rings as an alarm.
+class AlertEditor extends StatefulWidget {
+  final String label;
+  final bool ring;
+  final int start;
+  final int duration;
+
+  const AlertEditor({super.key, required this.label, required this.ring, required this.start, required this.duration});
+
+  @override
+  State<AlertEditor> createState() => _AlertEditorState();
+}
+
+class _AlertEditorState extends State<AlertEditor> {
+  /// 'before', 'start' or 'end'.
+  late String _when;
+  late int _before;
+  late bool _ring;
+
+  static const _presets = [5, 10, 15, 30, 60];
+
+  @override
+  void initState() {
+    super.initState();
+    final before = alertBefore(widget.label);
+    _when = before == null ? 'end' : (before == 0 ? 'start' : 'before');
+    _before = before == null || before == 0 ? 15 : before;
+    _ring = widget.ring;
+  }
+
+  String get _label => switch (_when) { 'end' => kAtEnd, 'start' => kAtStart, _ => alertLabel(_before) };
+
+  void _nudge(int by) => setState(() => _before = (_before + by).clamp(1, 24 * 60));
+
+  @override
+  Widget build(BuildContext context) {
+    final store = AppScope.of(context);
+    final c = AppScope.colorsOf(context);
+    final fires = alertTime(_label, widget.start, widget.duration);
+
+    Widget step(String text, int by) => Material(
+          color: c.surf2,
+          borderRadius: BorderRadius.circular(12),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: () => _nudge(by),
+            child: SizedBox(
+              width: 46,
+              height: 40,
+              child: Center(
+                child: Text(text, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: c.txt2)),
+              ),
+            ),
+          ),
+        );
+
+    return Dialog(
+      backgroundColor: c.surf,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(22),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Alert', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800, color: c.txt)),
+          const SizedBox(height: 4),
+          Text(
+            '${fires < 0 ? 'The evening before, ' : ''}${fmtMins(fires % 1440, store.use24)}',
+            key: const ValueKey('alert-fires'),
+            style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: c.acc),
+          ),
+          const SizedBox(height: 16),
+          Segmented<String>(
+            values: const ['before', 'start', 'end'],
+            labels: const ['Before', 'At start', 'At end'],
+            value: _when,
+            onChanged: (v) => setState(() => _when = v),
+          ),
+          if (_when == 'before') ...[
+            const SizedBox(height: 16),
+            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+              step('−5', -5),
+              step('−1', -1),
+              Expanded(
+                child: Text(durLabel(_before),
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: c.txt)),
+              ),
+              step('+1', 1),
+              step('+5', 5),
+            ]),
+            const SizedBox(height: 12),
+            Row(children: [
+              for (final m in _presets) ...[
+                if (m != _presets.first) const SizedBox(width: 6),
+                Expanded(
+                  child: PillButton(
+                    label: durLabel(m),
+                    height: 34,
+                    selected: _before == m,
+                    onTap: () => setState(() => _before = m),
+                  ),
+                ),
+              ],
+            ]),
+          ],
+          const SizedBox(height: 18),
+          AlarmChoice(alarm: _ring, onChanged: (v) => setState(() => _ring = v)),
+          const SizedBox(height: 20),
+          Row(children: [
+            Expanded(
+              child: PrimaryButton(
+                label: 'Cancel',
+                background: c.surf2,
+                foreground: c.txt2,
+                onTap: () => Navigator.pop(context),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: PrimaryButton(
+                label: 'Done',
+                onTap: () => Navigator.pop(context, (label: _label, ring: _ring)),
+              ),
+            ),
+          ]),
+        ]),
+      ),
+    );
+  }
+}
+
 /// Whether a reminder arrives as a notification or rings as an alarm.
 class AlarmChoice extends StatelessWidget {
   final bool alarm;
@@ -1049,7 +1207,44 @@ class TimeStepper extends StatelessWidget {
   final bool use24;
   final ValueChanged<int> onChanged;
 
-  const TimeStepper({super.key, required this.minutes, required this.use24, required this.onChanged});
+  /// How far one press of a minute arrow moves. Reminders and alarms use 1:
+  /// an alarm for 6:52 has to be settable to 6:52.
+  final int minuteStep;
+
+  const TimeStepper({
+    super.key,
+    required this.minutes,
+    required this.use24,
+    required this.onChanged,
+    this.minuteStep = 1,
+  });
+
+  /// The system clock dial, for typing a time in rather than stepping to it.
+  Future<void> _type(BuildContext context) async {
+    final c = AppScope.colorsOf(context);
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(hour: minutes ~/ 60, minute: minutes % 60),
+      builder: (ctx, child) {
+        final base = c.isDark ? ThemeData.dark() : ThemeData.light();
+        return MediaQuery(
+          data: MediaQuery.of(ctx).copyWith(alwaysUse24HourFormat: use24),
+          child: Theme(
+            data: base.copyWith(
+              colorScheme: base.colorScheme.copyWith(
+                primary: c.acc,
+                onPrimary: c.accTxt,
+                surface: c.surf,
+                onSurface: c.txt,
+              ),
+            ),
+            child: child!,
+          ),
+        );
+      },
+    );
+    if (picked != null) onChanged(picked.hour * 60 + picked.minute);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1060,10 +1255,14 @@ class TimeStepper extends StatelessWidget {
 
     Widget stepper(String value, VoidCallback up, VoidCallback down) => Column(children: [
           _arrow(c, Icons.keyboard_arrow_up, up),
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 6),
-            child: Text(value,
-                style: TextStyle(fontSize: 38, fontWeight: FontWeight.w800, letterSpacing: -1, color: c.txt)),
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => _type(context),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Text(value,
+                  style: TextStyle(fontSize: 38, fontWeight: FontWeight.w800, letterSpacing: -1, color: c.txt)),
+            ),
           ),
           _arrow(c, Icons.keyboard_arrow_down, down),
         ]);
@@ -1080,8 +1279,8 @@ class TimeStepper extends StatelessWidget {
           ),
           stepper(
             minText,
-            () => onChanged(((minutes ~/ 5) * 5 + 5) % 1440),
-            () => onChanged(((minutes ~/ 5) * 5 + 1435) % 1440),
+            () => onChanged(((minutes ~/ minuteStep) * minuteStep + minuteStep) % 1440),
+            () => onChanged((((minutes + minuteStep - 1) ~/ minuteStep) * minuteStep + 1440 - minuteStep) % 1440),
           ),
           if (!use24) ...[
             const SizedBox(width: 10),
@@ -1092,7 +1291,9 @@ class TimeStepper extends StatelessWidget {
             ]),
           ],
         ]),
-        const SizedBox(height: 16),
+        const SizedBox(height: 6),
+        Text('Tap the time to type it in', style: TextStyle(fontSize: 11.5, color: c.txt3)),
+        const SizedBox(height: 12),
         Row(children: [
           for (final t in [420, 720, 1080, 1320]) ...[
             if (t != 420) const SizedBox(width: 6),

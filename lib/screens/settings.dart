@@ -203,6 +203,9 @@ class NotificationsPage extends StatelessWidget {
     final store = AppScope.of(context);
     final c = AppScope.colorsOf(context);
     return SubPage(title: 'Notifications & Alerts', children: [
+      const AlertCheck(),
+      const SizedBox(height: 22),
+      const SectionLabel('What may alert you'),
       SwitchRow(
         title: 'Timeline blocks',
         subtitle: 'Alerts you set on a block',
@@ -263,6 +266,124 @@ class NotificationsPage extends StatelessWidget {
           child: SizedBox(width: 38, height: 38, child: Icon(icon, size: 19, color: c.txt2)),
         ),
       );
+}
+
+/// Says whether Android will actually deliver alerts, and lets one be tried
+/// on the spot instead of waiting for a real reminder to find out.
+class AlertCheck extends StatefulWidget {
+  const AlertCheck({super.key});
+
+  @override
+  State<AlertCheck> createState() => _AlertCheckState();
+}
+
+class _AlertCheckState extends State<AlertCheck> with WidgetsBindingObserver {
+  AlertStatus? _status;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _refresh();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  // The permission is changed in system settings, so look again on return.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _refresh();
+  }
+
+  Future<void> _refresh() async {
+    final status = await Notifications.status();
+    if (mounted) setState(() => _status = status);
+  }
+
+  Future<void> _try(bool alarm) async {
+    await Notifications.test(alarm: alarm);
+    if (mounted) {
+      showNotice(context, alarm ? 'Alarm rings in 5 seconds — lock the phone to try it there' : 'Notification in 5 seconds');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = AppScope.colorsOf(context);
+    final status = _status;
+    final problem = status == null
+        ? null
+        : !status.allowed
+            ? 'Notifications are switched off for Timebox, so nothing can alert you.'
+            : !status.exact
+                ? 'Exact timing is not allowed, so alerts and alarms can arrive minutes late.'
+                : null;
+
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      if (problem != null) ...[
+        Panel(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Icon(Icons.error_outline, size: 20, color: c.danger),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(problem,
+                    style: TextStyle(fontSize: 13.5, height: 1.45, fontWeight: FontWeight.w600, color: c.txt)),
+              ),
+            ]),
+            const SizedBox(height: 12),
+            PrimaryButton(
+              label: 'Allow',
+              onTap: () async {
+                await Notifications.requestAccess();
+                await _refresh();
+              },
+            ),
+          ]),
+        ),
+        const SizedBox(height: 10),
+      ] else if (status != null) ...[
+        Panel(
+          child: Row(children: [
+            Icon(Icons.check_circle, size: 20, color: c.acc),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text('Alerts are allowed and fire on the minute.',
+                  style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: c.txt)),
+            ),
+          ]),
+        ),
+        const SizedBox(height: 10),
+      ],
+      Row(children: [
+        Expanded(
+          child: PrimaryButton(
+            label: 'Test notification',
+            background: c.surf2,
+            foreground: c.txt,
+            onTap: () => _try(false),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: PrimaryButton(label: 'Test alarm', icon: Icons.alarm, onTap: () => _try(true)),
+        ),
+      ]),
+      const SizedBox(height: 10),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: Text(
+          'If a test never arrives, the phone is holding Timebox back: open its system settings and '
+          'set Battery to Unrestricted. Xiaomi, Huawei, Oppo and Samsung phones do this most.',
+          style: TextStyle(fontSize: 12, height: 1.5, color: c.txt3),
+        ),
+      ),
+    ]);
+  }
 }
 
 class LookPage extends StatelessWidget {
