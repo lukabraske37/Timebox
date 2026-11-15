@@ -305,8 +305,12 @@ class _AlertCheckState extends State<AlertCheck> with WidgetsBindingObserver {
   }
 
   Future<void> _try(bool alarm) async {
-    await Notifications.test(alarm: alarm);
-    if (mounted) {
+    final error = await Notifications.test(alarm: alarm);
+    if (!mounted) return;
+    setState(() {});
+    if (error != null) {
+      showNotice(context, 'Could not be scheduled — see the reason above', bad: true);
+    } else {
       showNotice(context, alarm ? 'Alarm rings in 5 seconds — lock the phone to try it there' : 'Notification in 5 seconds');
     }
   }
@@ -355,6 +359,18 @@ class _AlertCheckState extends State<AlertCheck> with WidgetsBindingObserver {
               child: Text('Alerts are allowed and fire on the minute.',
                   style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: c.txt)),
             ),
+          ]),
+        ),
+        const SizedBox(height: 10),
+      ],
+      if (Notifications.lastError != null) ...[
+        Panel(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('The last alert could not be scheduled',
+                style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: c.danger)),
+            const SizedBox(height: 6),
+            SelectableText(Notifications.lastError!,
+                maxLines: 6, style: TextStyle(fontSize: 12, height: 1.4, color: c.txt2)),
           ]),
         ),
         const SizedBox(height: 10),

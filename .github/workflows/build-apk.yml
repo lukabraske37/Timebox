@@ -108,6 +108,42 @@ jobs:
           }
           EOF
 
+      - name: Keep the code the notification plugin needs
+        # A release build is run through R8, which strips and renames classes
+        # it thinks nothing uses. flutter_local_notifications stores every
+        # scheduled alert through Gson, by reflection, so R8 cannot see the
+        # use: scheduling then throws on the phone and no alert ever fires,
+        # while everything looks fine in the app. The rules are the plugin's
+        # own; shrinking is switched off as well, since a planner that cannot
+        # ring is not worth the megabytes it saves.
+        run: |
+          cat > android/app/proguard-rules.pro <<'EOF'
+          -keepattributes Signature
+          -keepattributes *Annotation*
+          -dontwarn sun.misc.**
+          -keep class * extends com.google.gson.TypeAdapter
+          -keep class * implements com.google.gson.TypeAdapterFactory
+          -keep class * implements com.google.gson.JsonSerializer
+          -keep class * implements com.google.gson.JsonDeserializer
+          -keepclassmembers,allowobfuscation class * {
+            @com.google.gson.annotations.SerializedName <fields>;
+          }
+          -keep,allowobfuscation,allowshrinking class com.google.gson.reflect.TypeToken
+          -keep,allowobfuscation,allowshrinking class * extends com.google.gson.reflect.TypeToken
+          -keep class com.dexterous.** { *; }
+          EOF
+          cat >> android/app/build.gradle.kts <<'EOF'
+
+          android {
+              buildTypes {
+                  getByName("release") {
+                      isMinifyEnabled = false
+                      isShrinkResources = false
+                  }
+              }
+          }
+          EOF
+
       - name: Use a FlutterFragmentActivity (required by local_auth)
         run: |
           f=$(find android/app/src/main -name MainActivity.kt)
