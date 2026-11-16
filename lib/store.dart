@@ -47,23 +47,26 @@ const Map<String, double> kZoom = {'compact': 0.45, 'normal': 0.85, 'roomy': 1.5
 const Map<String, double> kMinNode = {'compact': 52, 'normal': 62, 'roomy': 78};
 const double kRowGap = 10;
 
+/// A stretch of a habit's past to sum up. [days] of zero is all of it, from
+/// the first day it was ever ticked.
 class HabitRange {
   final String key;
   final String label;
   final int days;
-  final bool monthly;
-  final int bars;
-  final double cell;
-  final double gap;
 
-  const HabitRange(this.key, this.label, this.days, this.monthly, this.bars, this.cell, this.gap);
+  /// How many months the bar chart shows; zero for as many as there are.
+  final int bars;
+
+  const HabitRange(this.key, this.label, this.days, this.bars);
+
+  bool get allTime => days == 0;
 }
 
 const List<HabitRange> kRanges = [
-  HabitRange('5w', '5 weeks', 35, false, 5, 42, 6),
-  HabitRange('12w', '12 weeks', 84, false, 12, 24, 4),
-  HabitRange('6m', '6 months', 182, true, 6, 11, 3),
-  HabitRange('1y', 'Year', 364, true, 12, 6, 2),
+  HabitRange('3m', '3 months', 91, 3),
+  HabitRange('6m', '6 months', 182, 6),
+  HabitRange('1y', 'Year', 364, 12),
+  HabitRange('all', 'All time', 0, 0),
 ];
 
 class Store extends ChangeNotifier {
@@ -101,7 +104,7 @@ class Store extends ChangeNotifier {
   bool alertNewBlocks = true;
   bool dailySummary = false;
   int summaryTime = 1260;
-  String habitRange = '5w';
+  String habitRange = '3m';
 
   /// What alarms ring with: [kSystemSound], [kCustomSound] or the key of one
   /// of [kAlarmSounds].
@@ -322,7 +325,7 @@ class Store extends ChangeNotifier {
     dailySummary = _flag(j['dailySummary'], false);
     final summary = j['summaryTime'];
     summaryTime = summary is num ? summary.toInt().clamp(0, 1439) : 1260;
-    habitRange = kRanges.any((r) => r.key == j['habitRange']) ? j['habitRange'] as String : '5w';
+    habitRange = kRanges.any((r) => r.key == j['habitRange']) ? j['habitRange'] as String : '3m';
     lastBackupAt = j['lastBackupAt'] is String ? j['lastBackupAt'] as String : null;
     alarmSound = _text(j['alarmSound'], kSystemSound);
     customSoundFile = j['customSoundFile'] is String ? j['customSoundFile'] as String : null;

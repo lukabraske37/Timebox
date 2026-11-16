@@ -47,8 +47,8 @@ red, anything without a date waits at the bottom until you give it one.
 
 **Habits.** Tick them off daily and watch the streak grow. Each has its own
 icon and colour, the last week at a glance in the list, and a page of its own
-with the current and best run, a calendar you can correct by tapping, and
-charts from five weeks up to a full year.
+with the current and best run, a month-by-month calendar you can correct by
+tapping, and charts over three months, six, a year or all time.
 
 **Alarms.** Any reminder can ring as an alarm instead: on the alarm volume, even
 on silent, until you stop it or snooze it for ten minutes. Every alert is set to
