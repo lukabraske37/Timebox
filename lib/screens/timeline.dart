@@ -304,7 +304,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
         !store.classicTimeline &&
         store.now >= layout.origin &&
         store.now <= layout.last + 30;
-    final nowY = (store.now - layout.origin) * layout.ppm;
+    final nowY = layout.yOf(store.now);
     final railAbove = children.length;
 
     for (final row in layout.rows) {

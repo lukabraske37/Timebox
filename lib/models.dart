@@ -510,6 +510,38 @@ class TimelineLayout {
   final int first;
   final int last;
 
+  /// Where [minutes] past midnight falls on the track. A short block is drawn
+  /// taller than its time, which pushes everything after it down, so the
+  /// answer has to come from where the blocks actually sit: inside a block it
+  /// is that far through the card, and between two it is that far through the
+  /// gap as drawn.
+  double yOf(int minutes) {
+    if (rows.isEmpty) return (minutes - origin) * ppm;
+    LaidOutBlock? inside, before, after;
+    for (final r in rows) {
+      final b = r.block;
+      if (b.start <= minutes && minutes < b.end) {
+        // Of two blocks running side by side, follow the one that runs on
+        // longest: the line then never has to jump back up when the shorter
+        // one ends.
+        if (inside == null || b.end > inside.block.end) inside = r;
+      } else if (b.end <= minutes) {
+        if (before == null || r.y + r.height > before.y + before.height) before = r;
+      } else if (after == null || r.y < after.y) {
+        after = r;
+      }
+    }
+    if (inside != null) {
+      return inside.y + (minutes - inside.block.start) / inside.block.duration * inside.height;
+    }
+    if (before == null) return after!.y - (after.block.start - minutes) * ppm;
+    final bottom = before.y + before.height;
+    if (after == null) return bottom + (minutes - before.block.end) * ppm;
+    final gap = after.block.start - before.block.end;
+    if (gap <= 0) return bottom;
+    return bottom + (minutes - before.block.end) / gap * (after.y - bottom);
+  }
+
   TimelineLayout({
     required this.rows,
     required this.trackHeight,
