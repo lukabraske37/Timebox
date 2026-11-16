@@ -42,6 +42,18 @@
             </intent-filter>
         </receiver>
 
+        <!-- Lets Android itself read the alarm sound the user picked, and
+             nothing else of what the app keeps. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.sounds"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/timebox_sound_paths"/>
+        </provider>
+
         <meta-data
             android:name="flutterEmbedding"
             android:value="2"/>

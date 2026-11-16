@@ -5,7 +5,7 @@ library;
 /// nudges on the action bar. A start that falls off that grid can never be
 /// brought back onto it, since every step keeps the same remainder.
 /// Shown in Settings. The build number is stamped in by the release workflow.
-const String kAppVersion = '1.2';
+const String kAppVersion = '1.3';
 const String kAppBuild = String.fromEnvironment('BUILD', defaultValue: 'dev');
 
 const int kStep = 5;
@@ -17,6 +17,92 @@ DateTime Function() clock = DateTime.now;
 
 /// How long Snooze puts an alarm off for.
 const int kSnoozeMinutes = 10;
+
+/// The application id the release is built with. A sound file of the user's
+/// own is handed to Android by an address that starts with it.
+const String kAndroidPackage = 'com.timebox.timebox';
+
+/// One of the sounds an alarm can ring with. Each is a file in assets/sounds:
+/// the app plays it from there as a preview, and the build copies it into the
+/// Android resources, where the system plays it as the alarm itself.
+class AlarmSound {
+  final String key;
+  final String name;
+  final String about;
+
+  const AlarmSound(this.key, this.name, this.about);
+
+  String get resource => 'alarm_$key';
+  String get asset => 'sounds/alarm_$key.ogg';
+}
+
+/// The phone's own alarm sound, whatever its owner has set that to.
+const String kSystemSound = 'system';
+
+/// A sound file the user picked themselves.
+const String kCustomSound = 'custom';
+
+const List<AlarmSound> kAlarmSounds = [
+  AlarmSound('classic', 'Classic', 'Four beeps and a pause'),
+  AlarmSound('digital', 'Digital', 'The trill of a wristwatch'),
+  AlarmSound('chime', 'Chime', 'A run on a glockenspiel'),
+  AlarmSound('marimba', 'Marimba', 'A warm mallet tune'),
+  AlarmSound('harp', 'Harp', 'A plucked run upward'),
+  AlarmSound('sunrise', 'Sunrise', 'A slow, gentle swell'),
+  AlarmSound('birds', 'Birds', 'Birdsong at the window'),
+  AlarmSound('bell', 'Bell', 'Two strokes of a large bell'),
+  AlarmSound('pulse', 'Pulse', 'Urgent rising sweeps'),
+];
+
+/// What an alarm rings with, worked out to what Android needs. Android fixes
+/// a notification channel's sound when the channel is first made, so every
+/// sound gets a channel of its own.
+class AlarmVoice {
+  final String channel;
+  final String label;
+
+  /// A sound built into the app, by resource name.
+  final String? resource;
+
+  /// Any other sound, by address.
+  final String? uri;
+
+  const AlarmVoice({required this.channel, required this.label, this.resource, this.uri});
+
+  static const system = AlarmVoice(
+    channel: 'timebox_alarm',
+    label: 'Timebox alarms',
+    uri: 'content://settings/system/alarm_alert',
+  );
+
+  /// The voice for the sound saved as [key]. Anything unrecognised — a sound
+  /// from a newer build, a custom choice whose file is gone — falls back to
+  /// the phone's own, so an alarm is never left with nothing to ring.
+  factory AlarmVoice.of(String key, {String? customFile}) {
+    if (key == kCustomSound && customFile != null && customFile.isNotEmpty) {
+      return AlarmVoice(
+        channel: 'timebox_alarm_${customFile.replaceAll(RegExp('[^A-Za-z0-9]'), '_')}',
+        label: 'Timebox alarms · your sound',
+        uri: 'content://$kAndroidPackage.sounds/sounds/$customFile',
+      );
+    }
+    for (final s in kAlarmSounds) {
+      if (s.key == key) {
+        return AlarmVoice(channel: 'timebox_alarm_$key', label: 'Timebox alarms · ${s.name}', resource: s.resource);
+      }
+    }
+    return system;
+  }
+
+  Map<String, dynamic> toJson() => {'channel': channel, 'label': label, 'resource': resource, 'uri': uri};
+
+  static AlarmVoice fromJson(Map<String, dynamic> j) => AlarmVoice(
+        channel: j['channel'] as String,
+        label: j['label'] as String,
+        resource: j['resource'] as String?,
+        uri: j['uri'] as String?,
+      );
+}
 
 /// An alert on a block is stored as the sentence the editor shows for it.
 const String kAtStart = 'At start of task';

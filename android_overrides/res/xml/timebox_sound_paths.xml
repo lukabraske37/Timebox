@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The one folder of the app's private storage that Android may read: the
+     alarm sound the user picked for themselves. -->
+<paths>
+    <files-path name="sounds" path="sounds/"/>
+</paths>

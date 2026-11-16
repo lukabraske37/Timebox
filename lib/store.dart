@@ -99,6 +99,26 @@ class Store extends ChangeNotifier {
   int summaryTime = 1260;
   String habitRange = '5w';
 
+  /// What alarms ring with: [kSystemSound], [kCustomSound] or the key of one
+  /// of [kAlarmSounds].
+  String alarmSound = kSystemSound;
+
+  /// The user's own sound: the copy kept in the app's storage, and the name
+  /// the file had when it was picked.
+  String? customSoundFile;
+  String? customSoundName;
+
+  AlarmVoice get alarmVoice => AlarmVoice.of(alarmSound, customFile: customSoundFile);
+
+  /// The name of the chosen sound, for the rows that show it.
+  String get alarmSoundName {
+    if (alarmSound == kCustomSound && customSoundFile != null) return customSoundName ?? 'Your sound';
+    for (final s in kAlarmSounds) {
+      if (s.key == alarmSound) return s.name;
+    }
+    return 'Phone alarm';
+  }
+
   /// When a backup file was last written out of the app, as an ISO timestamp.
   String? lastBackupAt;
 
@@ -172,6 +192,13 @@ class Store extends ChangeNotifier {
     _tick = Timer.periodic(const Duration(seconds: 20), (_) => _onTick());
     notifyListeners();
     if (!notifications) return;
+    // A chosen sound file can vanish — cleared storage, a restore from another
+    // phone. Better the phone's own alarm than one that rings with nothing.
+    if (alarmSound == kCustomSound && !await Sounds.has(customSoundFile)) {
+      alarmSound = kSystemSound;
+      customSoundFile = null;
+      customSoundName = null;
+    }
     await Notifications.init();
     _syncNotifications();
   }
@@ -247,6 +274,9 @@ class Store extends ChangeNotifier {
         'summaryTime': summaryTime,
         'habitRange': habitRange,
         'lastBackupAt': lastBackupAt,
+        'alarmSound': alarmSound,
+        'customSoundFile': customSoundFile,
+        'customSoundName': customSoundName,
       };
 
   /// One entry that will not parse is dropped on its own rather than taking
@@ -288,6 +318,9 @@ class Store extends ChangeNotifier {
     summaryTime = summary is num ? summary.toInt().clamp(0, 1439) : 1260;
     habitRange = kRanges.any((r) => r.key == j['habitRange']) ? j['habitRange'] as String : '5w';
     lastBackupAt = j['lastBackupAt'] is String ? j['lastBackupAt'] as String : null;
+    alarmSound = _text(j['alarmSound'], kSystemSound);
+    customSoundFile = j['customSoundFile'] is String ? j['customSoundFile'] as String : null;
+    customSoundName = j['customSoundName'] is String ? j['customSoundName'] as String : null;
   }
 
   void save() {
@@ -373,8 +406,14 @@ class Store extends ChangeNotifier {
     await _snapshot(_beforeRestore, jsonEncode(toJson()));
     // The lock belongs to this phone, not to the file being loaded.
     final lock = biometric;
+    final file = customSoundFile, name = customSoundName;
     _fromJson(data);
     biometric = lock;
+    // So does a sound file of one's own: the backup only knows its name, and
+    // the file itself never left the phone it was picked on.
+    customSoundFile = file;
+    customSoundName = name;
+    if (alarmSound == kCustomSound && file == null) alarmSound = kSystemSound;
     _viewDay = todayKey();
     booted = true;
     selectedBlockId = null;
@@ -393,6 +432,18 @@ class Store extends ChangeNotifier {
       selectedBlockId = null;
       _undoState = null;
     });
+  }
+
+  void setAlarmSound(String key) => mutate(() => alarmSound = key);
+
+  /// Takes [file], already copied into the app's storage, as the alarm sound.
+  void setCustomSound(String file, String name) {
+    mutate(() {
+      customSoundFile = file;
+      customSoundName = name;
+      alarmSound = kCustomSound;
+    });
+    Notifications.useVoice(alarmVoice).then((_) => Notifications.forgetOldSounds());
   }
 
   void markBackedUp() => mutate(() => lastBackupAt = clock().toIso8601String());
@@ -460,6 +511,7 @@ class Store extends ChangeNotifier {
     for (var i = 0; i < 8; i++) {
       upcoming.addAll(blocksOn(dayKey(i)));
     }
+    Notifications.useVoice(alarmVoice);
     Notifications.sync(
       blocks: upcoming,
       tasks: tasks,

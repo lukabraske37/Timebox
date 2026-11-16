@@ -106,6 +106,13 @@ class SettingsScreen extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             NavRow(
+              icon: Icons.music_note,
+              title: 'Alarm sound',
+              subtitle: store.alarmSoundName,
+              onTap: () => open(const AlarmSoundPage()),
+            ),
+            const SizedBox(height: 10),
+            NavRow(
               icon: Icons.palette,
               title: 'Look and Feel',
               subtitle: '${kThemeLabels[store.theme] ?? 'Dark'} · ${store.accent}',
@@ -204,6 +211,14 @@ class NotificationsPage extends StatelessWidget {
     final c = AppScope.colorsOf(context);
     return SubPage(title: 'Notifications & Alerts', children: [
       const AlertCheck(),
+      const SizedBox(height: 22),
+      const SectionLabel('Alarms'),
+      NavRow(
+        icon: Icons.music_note,
+        title: 'Alarm sound',
+        subtitle: store.alarmSoundName,
+        onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AlarmSoundPage())),
+      ),
       const SizedBox(height: 22),
       const SectionLabel('What may alert you'),
       SwitchRow(
@@ -399,6 +414,200 @@ class _AlertCheckState extends State<AlertCheck> with WidgetsBindingObserver {
         ),
       ),
     ]);
+  }
+}
+
+/// Where the sound an alarm rings with is chosen: the phone's own, one of
+/// the sounds that come with the app, or a file from the phone.
+class AlarmSoundPage extends StatefulWidget {
+  const AlarmSoundPage({super.key});
+
+  @override
+  State<AlarmSoundPage> createState() => _AlarmSoundPageState();
+}
+
+class _AlarmSoundPageState extends State<AlarmSoundPage> {
+  @override
+  void dispose() {
+    // A preview must not carry on playing over whatever comes next.
+    Sounds.stop();
+    super.dispose();
+  }
+
+  Future<void> _pickFile() async {
+    final store = AppScope.of(context);
+    await Sounds.stop();
+    final picked = await Sounds.pickCustom();
+    if (picked == null || !mounted) return;
+    if (picked.file == null) {
+      showNotice(context, picked.error ?? 'That file could not be used.', bad: true);
+      return;
+    }
+    store.setCustomSound(picked.file!, picked.name ?? 'Your sound');
+    showNotice(context, 'Alarms now ring with your sound');
+  }
+
+  Future<void> _ringTest() async {
+    await Sounds.stop();
+    final error = await Notifications.test(alarm: true);
+    if (!mounted) return;
+    showNotice(
+      context,
+      error == null ? 'Alarm rings in 5 seconds' : 'The test alarm could not be set',
+      bad: error != null,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final store = AppScope.of(context);
+    final c = AppScope.colorsOf(context);
+    final hasCustom = store.customSoundFile != null;
+
+    return SubPage(title: 'Alarm sound', children: [
+      _SoundRow(
+        soundKey: kSystemSound,
+        name: 'Phone alarm',
+        about: "Your phone's own alarm sound",
+        selected: store.alarmSound == kSystemSound,
+        onSelect: () {
+          Sounds.stop();
+          store.setAlarmSound(kSystemSound);
+        },
+      ),
+      const SizedBox(height: 22),
+      const SectionLabel('Timebox sounds'),
+      for (final sound in kAlarmSounds) ...[
+        _SoundRow(
+          soundKey: sound.key,
+          name: sound.name,
+          about: sound.about,
+          selected: store.alarmSound == sound.key,
+          // Choosing a sound plays it: hearing it is the point of choosing.
+          onSelect: () {
+            store.setAlarmSound(sound.key);
+            if (Sounds.playing.value != sound.key) Sounds.preview(sound.key);
+          },
+          onPreview: () => Sounds.preview(sound.key),
+        ),
+        const SizedBox(height: 8),
+      ],
+      const SizedBox(height: 14),
+      const SectionLabel('Your own'),
+      if (hasCustom) ...[
+        _SoundRow(
+          soundKey: kCustomSound,
+          name: store.customSoundName ?? 'Your sound',
+          about: 'A file from this phone',
+          selected: store.alarmSound == kCustomSound,
+          onSelect: () {
+            store.setAlarmSound(kCustomSound);
+            if (Sounds.playing.value != kCustomSound) {
+              Sounds.preview(kCustomSound, customFile: store.customSoundFile);
+            }
+          },
+          onPreview: () => Sounds.preview(kCustomSound, customFile: store.customSoundFile),
+        ),
+        const SizedBox(height: 8),
+      ],
+      PrimaryButton(
+        label: hasCustom ? 'Choose a different file' : 'Choose a sound file',
+        icon: Icons.audio_file,
+        background: c.surf2,
+        foreground: c.txt,
+        onTap: _pickFile,
+      ),
+      const SizedBox(height: 10),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: Text(
+          'Any song or recording on the phone. Timebox keeps its own copy, so the alarm still rings '
+          'if the original is moved or deleted.',
+          style: TextStyle(fontSize: 12, height: 1.5, color: c.txt3),
+        ),
+      ),
+      const SizedBox(height: 24),
+      PrimaryButton(label: 'Ring a test alarm', icon: Icons.alarm, onTap: _ringTest),
+      const SizedBox(height: 10),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: Text(
+          'The preview plays through the app. The test rings the way a real alarm will — on the alarm '
+          'volume, until you stop it — so it is the one to trust.',
+          style: TextStyle(fontSize: 12, height: 1.5, color: c.txt3),
+        ),
+      ),
+    ]);
+  }
+}
+
+class _SoundRow extends StatelessWidget {
+  final String soundKey;
+  final String name;
+  final String about;
+  final bool selected;
+  final VoidCallback onSelect;
+
+  /// Null for a sound the app cannot play itself, such as the phone's own.
+  final VoidCallback? onPreview;
+
+  const _SoundRow({
+    required this.soundKey,
+    required this.name,
+    required this.about,
+    required this.selected,
+    required this.onSelect,
+    this.onPreview,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = AppScope.colorsOf(context);
+    return Panel(
+      key: ValueKey('sound-$soundKey'),
+      color: selected ? washOf(c, c.acc) : c.surf,
+      padding: const EdgeInsets.fromLTRB(14, 6, 6, 6),
+      onTap: onSelect,
+      child: Row(children: [
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          width: 22,
+          height: 22,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: selected ? c.acc : Colors.transparent,
+            border: Border.all(color: selected ? c.acc : c.txt3, width: 2),
+          ),
+          child: selected ? Icon(Icons.check, size: 14, color: c.accTxt) : null,
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600, color: c.txt)),
+              const SizedBox(height: 3),
+              Text(about, style: TextStyle(fontSize: 12, color: c.txt3)),
+            ]),
+          ),
+        ),
+        if (onPreview != null)
+          ValueListenableBuilder<String?>(
+            valueListenable: Sounds.playing,
+            builder: (_, playing, __) => IconButton(
+              tooltip: playing == soundKey ? 'Stop' : 'Play',
+              onPressed: onPreview,
+              icon: Icon(playing == soundKey ? Icons.stop_circle : Icons.play_circle,
+                  size: 30, color: playing == soundKey ? c.acc : c.txt2),
+            ),
+          )
+        else
+          const SizedBox(height: 48),
+      ]),
+    );
   }
 }
 

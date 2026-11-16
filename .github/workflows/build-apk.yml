@@ -38,6 +38,21 @@ jobs:
       - name: Apply manifest permissions
         run: cp android_overrides/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
 
+      - name: Add the alarm sounds
+        # Android plays an alarm's sound itself, out of the app's resources,
+        # so the files the app previews from have to be there too: one set of
+        # files in the repository, copied to where each side looks. The xml
+        # beside them tells the provider in the manifest which folder of the
+        # app's storage it may hand out — the one a sound picked by the user
+        # is kept in.
+        run: |
+          res=android/app/src/main/res
+          mkdir -p "$res/raw" "$res/xml"
+          cp assets/sounds/*.ogg "$res/raw/"
+          cp android_overrides/res/raw/*.xml "$res/raw/"
+          cp android_overrides/res/xml/*.xml "$res/xml/"
+          ls "$res/raw"
+
       - name: Let each plugin keep its own JVM target
         # Every plugin declares its own Java and Kotlin target — flutter_timezone
         # compiles Java at 11, share_plus at 17 — and Kotlin 2.x refuses to build
@@ -195,7 +210,13 @@ jobs:
       # Build 11 shipped a shell whose navigation bar ate the whole screen, and
       # nothing in this workflow noticed. The layout tests fail on that, so run
       # them before spending five minutes on a broken APK.
+      #
+      # The runner's clock is UTC, where every day is 24 hours long. Half the
+      # date arithmetic only goes wrong in a zone that changes its clocks, so
+      # the tests are run in one.
       - run: flutter test
+        env:
+          TZ: Europe/Belgrade
 
       # Gradle pulls plugins, the Kotlin compiler and its own distribution over
       # the network on a cold runner, and any one of those can answer 504 for a

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import 'icons.dart';
 import 'models.dart';
+import 'screens/settings.dart';
 import 'store.dart';
 import 'theme.dart';
 import 'ui.dart';
@@ -946,6 +947,7 @@ class AlarmChoice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final store = AppScope.of(context);
     final c = AppScope.colorsOf(context);
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Segmented<bool>(
@@ -964,6 +966,40 @@ class AlarmChoice extends StatelessWidget {
           style: TextStyle(fontSize: 12, height: 1.4, color: c.txt3),
         ),
       ),
+      if (alarm) ...[
+        const SizedBox(height: 8),
+        // The sound is one choice for every alarm, kept in Settings; this is
+        // the way there from the place the question comes up.
+        Material(
+          color: c.surf2,
+          borderRadius: BorderRadius.circular(14),
+          child: InkWell(
+            key: const ValueKey('alarm-sound-link'),
+            borderRadius: BorderRadius.circular(14),
+            onTap: () => Navigator.of(context, rootNavigator: true).push(MaterialPageRoute(
+              builder: (_) => AppScope(
+                store: store,
+                colors: AppColors.resolve(store.theme, store.accent),
+                child: const AlarmSoundPage(),
+              ),
+            )),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(14, 11, 10, 11),
+              child: Row(children: [
+                Icon(Icons.music_note, size: 18, color: c.acc),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text('Sound · ${store.alarmSoundName}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: c.txt)),
+                ),
+                Icon(Icons.chevron_right, size: 19, color: c.txt3),
+              ]),
+            ),
+          ),
+        ),
+      ],
     ]);
   }
 }
