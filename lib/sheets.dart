@@ -76,7 +76,8 @@ class _BlockSheetState extends State<_BlockSheet> {
     _dur = b?.duration ?? 30;
     _color = b?.color ?? 0;
     _repeat = b?.repeat ?? 'Once';
-    _alerts = List.of(b?.alerts ?? const ['At start of task']);
+    // A new block's alerts are filled in once the setting can be read.
+    _alerts = List.of(b?.alerts ?? const []);
     _rings = {...?b?.rings};
     _subtasks = List.of(b?.subtasks ?? const []);
     _start = b?.start ?? widget.startAt ?? 540;
@@ -92,9 +93,14 @@ class _BlockSheetState extends State<_BlockSheet> {
     // so this runs again and again while the sheet is open. Only the first pass
     // may choose a start time — after that it is the user's.
     if (widget.existing == null && widget.startAt == null && !_startPicked) {
-      _startPicked = true;
       _start = AppScope.of(context).nextFreeStart();
     }
+    // The same goes for the alert a new block starts with: given once, if
+    // Settings asks for one, and after that left as the user has it.
+    if (widget.existing == null && !_startPicked && AppScope.of(context).alertNewBlocks) {
+      _alerts = [kAtStart];
+    }
+    _startPicked = true;
   }
 
   @override
