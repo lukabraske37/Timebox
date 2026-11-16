@@ -60,7 +60,7 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.enterText(find.byType(TextField), 'Long meeting');
-    await tester.tap(find.text('Create Task'));
+    await tester.tap(find.text('Create Block'));
     await tester.pumpAndSettle();
 
     final block = store.blocks.firstWhere((b) => b.title == 'Long meeting');

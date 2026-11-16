@@ -414,3 +414,127 @@ void showNotice(BuildContext context, String message, {bool bad = false}) {
       ]),
     ));
 }
+
+/// The colour something wears: its own, or the accent when item colours are
+/// switched off in Settings.
+Color toneOf(BuildContext context, int? color) {
+  final c = AppScope.colorsOf(context);
+  return AppScope.of(context).blockColorIcons ? c.item(color) : c.acc;
+}
+
+/// [tone] laid thinly over the card surface: the tint a card takes when the
+/// thing on it is done, selected or simply has a colour of its own.
+Color washOf(AppColors c, Color tone, [double strength = 1]) =>
+    Color.alphaBlend(tone.withOpacity((c.isDark ? 0.13 : 0.10) * strength), c.surf);
+
+/// A rounded tile holding an icon in its colour.
+class IconTile extends StatelessWidget {
+  final IconData icon;
+  final Color tone;
+  final double size;
+
+  const IconTile({super.key, required this.icon, required this.tone, this.size = 46});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = AppScope.colorsOf(context);
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: tone.withOpacity(c.isDark ? 0.18 : 0.14),
+        borderRadius: BorderRadius.circular(size * 0.32),
+      ),
+      child: Icon(icon, size: size * 0.5, color: tone),
+    );
+  }
+}
+
+/// The round tick used wherever something is marked done. The touch area is
+/// larger than the ring it draws, and the tick eases in rather than snapping.
+class CheckCircle extends StatelessWidget {
+  final bool done;
+  final Color color;
+  final double size;
+  final VoidCallback onTap;
+  final String label;
+
+  const CheckCircle({
+    super.key,
+    required this.done,
+    required this.color,
+    required this.onTap,
+    this.size = 30,
+    this.label = 'Done',
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      checked: done,
+      label: label,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Padding(
+          padding: EdgeInsets.all(size >= 44 ? 2 : 8),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOut,
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+              color: done ? color : Colors.transparent,
+              shape: BoxShape.circle,
+              border: Border.all(color: color, width: size >= 40 ? 3 : 2.5),
+            ),
+            child: AnimatedScale(
+              scale: done ? 1 : 0,
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOutBack,
+              child: Icon(Icons.check, size: size * 0.58, color: AppColors.onColor(color)),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A ring that fills as the day's count is met, with the count inside it.
+class ProgressRing extends StatelessWidget {
+  final double value;
+  final String label;
+  final Color? color;
+
+  const ProgressRing({super.key, required this.value, required this.label, this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = AppScope.colorsOf(context);
+    return SizedBox(
+      width: 50,
+      height: 50,
+      child: Stack(alignment: Alignment.center, children: [
+        SizedBox(
+          width: 46,
+          height: 46,
+          child: TweenAnimationBuilder<double>(
+            tween: Tween(begin: 0, end: value.clamp(0, 1).toDouble()),
+            duration: const Duration(milliseconds: 350),
+            curve: Curves.easeOut,
+            builder: (_, v, __) => CircularProgressIndicator(
+              value: v,
+              strokeWidth: 4.5,
+              strokeCap: StrokeCap.round,
+              backgroundColor: c.surf2,
+              valueColor: AlwaysStoppedAnimation(color ?? c.acc),
+            ),
+          ),
+        ),
+        Text(label, style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: c.txt)),
+      ]),
+    );
+  }
+}

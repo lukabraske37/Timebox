@@ -484,6 +484,10 @@ class _SimpleSheetState extends State<_SimpleSheet> {
   int _time = 540;
   String? _date;
 
+  /// The entry's place in the block palette. Null is a habit wearing the
+  /// app's accent.
+  int? _color;
+
   @override
   void initState() {
     super.initState();
@@ -492,6 +496,7 @@ class _SimpleSheetState extends State<_SimpleSheet> {
         _title = TextEditingController(text: widget.inbox?.title ?? '');
         _icon = widget.inbox?.icon ?? 'label';
         _dur = widget.inbox?.dur ?? 30;
+        _color = widget.inbox?.color ?? 0;
       case _SimpleKind.task:
         _title = TextEditingController(text: widget.task?.title ?? '');
         _icon = 'checklist';
@@ -505,6 +510,7 @@ class _SimpleSheetState extends State<_SimpleSheet> {
         _reminder = widget.habit?.time != null;
         _time = widget.habit?.time ?? 480;
         _alarm = widget.habit?.alarm ?? false;
+        _color = widget.habit?.color;
     }
   }
 
@@ -528,7 +534,8 @@ class _SimpleSheetState extends State<_SimpleSheet> {
     }
     switch (widget.kind) {
       case _SimpleKind.inbox:
-        final item = InboxItem(id: widget.inbox?.id ?? store.newId(), icon: _icon, title: title, dur: _dur);
+        final item = InboxItem(
+            id: widget.inbox?.id ?? store.newId(), icon: _icon, title: title, dur: _dur, color: _color ?? 0);
         widget.inbox == null ? store.addInbox(item) : store.replaceInbox(item);
       case _SimpleKind.task:
         final t = Task(
@@ -543,14 +550,21 @@ class _SimpleSheetState extends State<_SimpleSheet> {
       case _SimpleKind.habit:
         if (widget.habit == null) {
           store.addHabit(Habit(
-              id: store.newId(), title: title, icon: _icon, time: _reminder ? _time : null, alarm: _reminder && _alarm));
+            id: store.newId(),
+            title: title,
+            icon: _icon,
+            time: _reminder ? _time : null,
+            alarm: _reminder && _alarm,
+            color: _color,
+          ));
         } else {
           store.mutate(() {
             widget.habit!
               ..title = title
               ..icon = _icon
               ..time = _reminder ? _time : null
-              ..alarm = _reminder && _alarm;
+              ..alarm = _reminder && _alarm
+              ..color = _color;
           });
         }
     }
@@ -595,7 +609,7 @@ class _SimpleSheetState extends State<_SimpleSheet> {
   @override
   Widget build(BuildContext context) {
     final store = AppScope.of(context);
-    final c = AppScope.colorsOf(context);
+    final base = AppScope.colorsOf(context);
     final titles = {
       _SimpleKind.inbox: _editing ? 'Edit Inbox Block' : 'New Inbox Task',
       _SimpleKind.task: _editing ? 'Edit Task' : 'Add Task',
@@ -612,8 +626,26 @@ class _SimpleSheetState extends State<_SimpleSheet> {
       _SimpleKind.habit: 'Habit title',
     };
 
+    final isTask = widget.kind == _SimpleKind.task;
+    // Inbox entries and habits carry a colour of their own; a task is a line
+    // in a list and wears the accent like the rest of the app.
+    final tint = isTask || !store.blockColorIcons ? null : base.item(_color);
+    final c = tint == null ? base : base.withAccent(tint);
+
     return SheetFrame(
       title: titles[widget.kind]!,
+      accent: tint,
+      header: TitleField(
+        controller: _title,
+        // A task has no icon to choose, so it gets no tile pretending it has.
+        icon: isTask ? null : _icon,
+        hint: hints[widget.kind]!,
+        autofocus: !_editing,
+        onPickIcon: () async {
+          final picked = await openIconPicker(context, _icon, tint: c.acc);
+          if (picked != null) setState(() => _icon = picked);
+        },
+      ),
       footer: Column(children: [
         PrimaryButton(label: ctas[widget.kind]!, onTap: _save),
         if (_editing && widget.kind != _SimpleKind.habit) ...[
@@ -629,17 +661,7 @@ class _SimpleSheetState extends State<_SimpleSheet> {
         ],
       ]),
       children: [
-        TitleField(
-          controller: _title,
-          icon: _icon,
-          hint: hints[widget.kind]!,
-          onPickIcon: () async {
-            final picked = await openIconPicker(context, _icon);
-            if (picked != null) setState(() => _icon = picked);
-          },
-        ),
         if (widget.kind == _SimpleKind.inbox) ...[
-          const SizedBox(height: 24),
           FieldLabel('How long?',
               trailing: _longer ? 'Less…' : 'More…',
               onTrailing: () => setState(() => _longer = !_longer)),
@@ -667,7 +689,6 @@ class _SimpleSheetState extends State<_SimpleSheet> {
           ],
         ],
         if (widget.kind == _SimpleKind.task) ...[
-          const SizedBox(height: 24),
           FieldLabel(
             'When is it due?',
             trailing: _date == null ? null : 'Clear',
@@ -716,8 +737,26 @@ class _SimpleSheetState extends State<_SimpleSheet> {
                 style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: c.danger)),
           ],
         ],
+        if (!isTask && store.blockColorIcons) ...[
+          if (widget.kind == _SimpleKind.inbox) const SizedBox(height: 22),
+          const FieldLabel('What color?'),
+          const SizedBox(height: 12),
+          ColorRow(
+            value: _color,
+            // A habit may go without one and follow the accent; an Inbox
+            // entry hands its colour to every block made from it, so it
+            // always has one.
+            allowNone: widget.kind == _SimpleKind.habit,
+            onChanged: (v) {
+              setState(() => _color = widget.kind == _SimpleKind.inbox ? (v ?? 0) : v);
+              // Something that already exists changes there and then.
+              if (widget.inbox != null) store.mutate(() => widget.inbox!.color = _color ?? 0);
+              if (widget.habit != null) store.mutate(() => widget.habit!.color = _color);
+            },
+          ),
+        ],
         if (widget.kind != _SimpleKind.inbox) ...[
-          const SizedBox(height: 22),
+          SizedBox(height: isTask ? 22 : 24),
           Container(
             padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
             decoration: BoxDecoration(color: c.surf2, borderRadius: BorderRadius.circular(16)),
@@ -967,18 +1006,29 @@ class SheetFrame extends StatelessWidget {
   final Widget footer;
   final double maxHeightFactor;
 
+  /// Stays put above the scrolling part. The editors put the title field
+  /// here, so what is being edited — its name, icon and colour — is in view
+  /// the whole time, however far down the sheet has been scrolled.
+  final Widget? header;
+
+  /// When set, everything in the sheet uses this in place of the app's accent.
+  final Color? accent;
+
   const SheetFrame({
     super.key,
     required this.title,
     required this.children,
     required this.footer,
     this.maxHeightFactor = 0.8,
+    this.header,
+    this.accent,
   });
 
   @override
   Widget build(BuildContext context) {
-    final c = AppScope.colorsOf(context);
-    return ConstrainedBox(
+    final base = AppScope.colorsOf(context);
+    final c = accent == null ? base : base.withAccent(accent!);
+    final frame = ConstrainedBox(
       constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * maxHeightFactor),
       child: Column(mainAxisSize: MainAxisSize.min, children: [
         const SizedBox(height: 14),
@@ -988,25 +1038,35 @@ class SheetFrame extends StatelessWidget {
           decoration: BoxDecoration(color: c.line, borderRadius: BorderRadius.circular(2)),
         ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 18),
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 14),
           child: Row(children: [
             Expanded(
               child: Text(title, style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800, color: c.txt)),
             ),
-            GestureDetector(
-              onTap: () => Navigator.pop(context),
-              child: Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(color: c.surf2, shape: BoxShape.circle),
-                child: Icon(Icons.close, size: 20, color: c.txt2),
+            Semantics(
+              button: true,
+              label: 'Close',
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => Navigator.pop(context),
+                child: Padding(
+                  padding: const EdgeInsets.all(4),
+                  child: Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(color: c.surf2, shape: BoxShape.circle),
+                    child: Icon(Icons.close, size: 20, color: c.txt2),
+                  ),
+                ),
               ),
             ),
           ]),
         ),
+        if (header != null)
+          Padding(padding: const EdgeInsets.fromLTRB(20, 0, 20, 18), child: header),
         Flexible(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: children),
           ),
         ),
@@ -1021,6 +1081,7 @@ class SheetFrame extends StatelessWidget {
         ),
       ]),
     );
+    return accent == null ? frame : AppScope(store: AppScope.of(context), colors: c, child: frame);
   }
 }
 
@@ -1047,47 +1108,60 @@ class FieldLabel extends StatelessWidget {
   }
 }
 
+/// The name of whatever is being edited, with its icon beside it. The tile
+/// wears the accent of the sheet it sits in, which an editor sets to the
+/// colour of the thing itself.
 class TitleField extends StatelessWidget {
   final TextEditingController controller;
-  final String icon;
-  final String hint;
-  final VoidCallback onPickIcon;
 
-  /// The colour chosen for this block, so the tile shows it while it is being
-  /// picked rather than only once the sheet is saved.
-  final Color? tint;
+  /// Null for something that has no icon: the tile is left out altogether.
+  final String? icon;
+  final String hint;
+  final VoidCallback? onPickIcon;
+
+  /// Raising the keyboard is right for something new, which needs a name
+  /// first. Something that exists is as likely opened to move its time.
+  final bool autofocus;
 
   const TitleField({
     super.key,
     required this.controller,
     required this.icon,
     required this.hint,
-    required this.onPickIcon,
-    this.tint,
+    this.onPickIcon,
+    this.autofocus = true,
   });
 
   @override
   Widget build(BuildContext context) {
     final c = AppScope.colorsOf(context);
-    final shade = tint ?? c.acc;
     return Row(children: [
-      GestureDetector(
-        onTap: onPickIcon,
-        child: Container(
-          width: 46,
-          height: 46,
-          decoration: BoxDecoration(
-            color: tint == null ? c.surf2 : shade.withOpacity(c.isDark ? 0.18 : 0.14),
-            borderRadius: BorderRadius.circular(14),
+      if (icon != null) ...[
+        Semantics(
+          button: true,
+          label: 'Change icon',
+          child: GestureDetector(
+            onTap: onPickIcon,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              width: 50,
+              height: 50,
+              decoration: BoxDecoration(
+                color: c.acc.withOpacity(c.isDark ? 0.20 : 0.15),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Icon(iconFor(icon!), size: 25, color: c.acc),
+            ),
           ),
-          child: Icon(iconFor(icon), size: 23, color: shade),
         ),
-      ),
-      const SizedBox(width: 12),
+        const SizedBox(width: 12),
+      ],
       Expanded(
         child: TextField(
           controller: controller,
-          autofocus: true,
+          autofocus: autofocus,
+          textCapitalization: TextCapitalization.sentences,
+          cursorColor: c.acc,
           style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: c.txt),
           decoration: InputDecoration(
             hintText: hint,
@@ -1097,6 +1171,68 @@ class TitleField extends StatelessWidget {
           ),
         ),
       ),
+    ]);
+  }
+}
+
+/// The block palette as a grid of swatches.
+class ColorRow extends StatelessWidget {
+  final int? value;
+  final ValueChanged<int?> onChanged;
+
+  /// Offers "no colour of its own" as the first swatch, drawn in the app's
+  /// real accent.
+  final bool allowNone;
+
+  const ColorRow({super.key, required this.value, required this.onChanged, this.allowNone = false});
+
+  @override
+  Widget build(BuildContext context) {
+    // The sheet's own accent is the colour being picked, so "follow the app"
+    // has to be drawn from the palette the whole app runs on.
+    final store = AppScope.of(context);
+    final app = AppColors.resolve(store.theme, store.accent);
+    final count = app.isDark ? kBlockColorsDark.length : kBlockColorsLight.length;
+
+    Widget swatch(int? index) {
+      final color = app.item(index);
+      final on = value == index;
+      return Semantics(
+        button: true,
+        selected: on,
+        label: index == null ? 'App accent' : kBlockColorNames[index % kBlockColorNames.length],
+        child: GestureDetector(
+          key: ValueKey('color-${index ?? 'accent'}'),
+          behavior: HitTestBehavior.opaque,
+          onTap: () {
+            HapticFeedback.selectionClick();
+            onChanged(index);
+          },
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 140),
+            width: 40,
+            height: 40,
+            padding: EdgeInsets.all(on ? 4 : 0),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: on ? Border.all(color: color, width: 2.5) : null,
+            ),
+            child: DecoratedBox(
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+              child: on
+                  ? Icon(Icons.check, size: 17, color: AppColors.onColor(color))
+                  : (index == null
+                      ? Icon(Icons.auto_awesome, size: 16, color: AppColors.onColor(color))
+                      : null),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Wrap(spacing: 11, runSpacing: 11, children: [
+      if (allowNone) swatch(null),
+      for (var i = 0; i < count; i++) swatch(i),
     ]);
   }
 }
@@ -1345,37 +1481,91 @@ class TimeStepper extends StatelessWidget {
 
 // ---------------------------------------------------------------- icon picker
 
-Future<String?> openIconPicker(BuildContext context, String current) {
+/// [tint] is the colour of the thing the icon is for. The picker shows every
+/// icon in it, so what is chosen here looks the way it will on the timeline.
+Future<String?> openIconPicker(BuildContext context, String current, {Color? tint}) {
+  final store = AppScope.of(context);
+  final base = AppColors.resolve(store.theme, store.accent);
   return Navigator.of(context).push<String>(MaterialPageRoute(
     fullscreenDialog: true,
-    builder: (_) => _IconPicker(current: current),
+    // A pushed page is built above the sheet that opened it, so it is handed
+    // the colour rather than left to find it.
+    builder: (_) => AppScope(
+      store: store,
+      colors: tint == null ? base : base.withAccent(tint),
+      child: IconPicker(current: current),
+    ),
   ));
 }
 
-class _IconPicker extends StatefulWidget {
+class IconPicker extends StatefulWidget {
   final String current;
-  const _IconPicker({required this.current});
+  const IconPicker({super.key, required this.current});
 
   @override
-  State<_IconPicker> createState() => _IconPickerState();
+  State<IconPicker> createState() => _IconPickerState();
 }
 
-class _IconPickerState extends State<_IconPicker> {
+class _IconPickerState extends State<IconPicker> {
+  final _search = TextEditingController();
   String _query = '';
   String? _category;
 
   @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  /// The categories to show, each with the icons in it that match.
+  List<MapEntry<String, List<String>>> get _shown {
+    final q = _query.trim().toLowerCase();
+    if (q.isNotEmpty) {
+      // Searching looks everywhere: narrowing to a category first and then
+      // finding nothing in it is the wrong way round.
+      final seen = <String>{};
+      final hits = [
+        for (final e in kIconCategories.entries)
+          for (final n in e.value)
+            if ((iconWords(n).contains(q) || e.key.toLowerCase().contains(q)) && seen.add(n)) n,
+      ];
+      return [if (hits.isNotEmpty) MapEntry('${hits.length} found', hits)];
+    }
+    return [
+      for (final e in kIconCategories.entries)
+        if (_category == null || _category == e.key) e,
+    ];
+  }
+
+  @override
   Widget build(BuildContext context) {
     final c = AppScope.colorsOf(context);
-    final q = _query.trim().toLowerCase();
-    var entries = kIconCategories.entries.toList();
-    if (q.isNotEmpty) {
-      entries = entries
-          .map((e) => MapEntry(e.key, e.value.where((n) => n.contains(q)).toList()))
-          .where((e) => e.value.isNotEmpty)
-          .toList();
-    } else if (_category != null) {
-      entries = entries.where((e) => e.key == _category).toList();
+    final shown = _shown;
+
+    Widget chip(String? category, String label) {
+      final on = _category == category && _query.isEmpty;
+      return Padding(
+        padding: const EdgeInsets.only(right: 8),
+        child: Material(
+          color: on ? c.acc : c.surf,
+          borderRadius: BorderRadius.circular(18),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(18),
+            onTap: () => setState(() {
+              _category = category;
+              _query = '';
+              _search.clear();
+            }),
+            child: Container(
+              height: 36,
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              alignment: Alignment.center,
+              child: Text(label,
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: on ? c.accTxt : c.txt2)),
+            ),
+          ),
+        ),
+      );
     }
 
     return Scaffold(
@@ -1386,6 +1576,7 @@ class _IconPickerState extends State<_IconPicker> {
             padding: const EdgeInsets.fromLTRB(8, 8, 16, 8),
             child: Row(children: [
               IconButton(
+                tooltip: 'Back',
                 onPressed: () => Navigator.pop(context),
                 icon: Icon(Icons.arrow_back, color: c.txt),
               ),
@@ -1399,88 +1590,102 @@ class _IconPickerState extends State<_IconPicker> {
                     const SizedBox(width: 10),
                     Expanded(
                       child: TextField(
+                        controller: _search,
                         onChanged: (v) => setState(() => _query = v),
+                        cursorColor: c.acc,
                         style: TextStyle(fontSize: 15, color: c.txt),
                         decoration: InputDecoration(
                           isDense: true,
                           border: InputBorder.none,
-                          hintText: 'Search',
+                          hintText: 'Search ${kIcons.length} icons',
                           hintStyle: TextStyle(color: c.txt3),
                         ),
                       ),
                     ),
+                    if (_query.isNotEmpty)
+                      GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () => setState(() {
+                          _query = '';
+                          _search.clear();
+                        }),
+                        child: Padding(
+                          padding: const EdgeInsets.all(6),
+                          child: Icon(Icons.close, size: 18, color: c.txt3),
+                        ),
+                      ),
                   ]),
                 ),
               ),
             ]),
           ),
-          Expanded(
+          SizedBox(
+            height: 44,
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 6, 16, 20),
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.fromLTRB(16, 0, 8, 8),
               children: [
-                for (final entry in entries) ...[
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: Row(children: [
-                      Icon(iconFor(entry.value.first), size: 17, color: c.txt2),
-                      const SizedBox(width: 8),
-                      Text(entry.key,
-                          style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: c.txt2)),
-                    ]),
-                  ),
-                  GridView.count(
-                    crossAxisCount: 6,
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    mainAxisSpacing: 9,
-                    crossAxisSpacing: 9,
-                    children: [
-                      for (final name in entry.value)
-                        GestureDetector(
-                          onTap: () => Navigator.pop(context, name),
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: name == widget.current ? c.accTint : c.surf,
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            child: Icon(iconFor(name), size: 22, color: name == widget.current ? c.acc : c.txt2),
-                          ),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 22),
-                ],
+                chip(null, 'All'),
+                for (final name in kIconCategories.keys) chip(name, name),
               ],
             ),
           ),
-          Container(
-            color: c.surf,
-            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(children: [
-                for (final entry in kIconCategories.entries)
-                  GestureDetector(
-                    onTap: () => setState(() {
-                      _category = _category == entry.key ? null : entry.key;
-                      _query = '';
-                    }),
-                    child: Container(
-                      width: 44,
-                      height: 40,
-                      margin: const EdgeInsets.symmetric(horizontal: 1),
-                      decoration: BoxDecoration(
-                        color: _category == entry.key ? c.accTint : Colors.transparent,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Icon(iconFor(entry.value.first),
-                          size: 20, color: _category == entry.key ? c.acc : c.txt3),
+          Expanded(
+            child: shown.isEmpty
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(30),
+                      child: Text('Nothing called "$_query". Try a shorter word.',
+                          textAlign: TextAlign.center, style: TextStyle(fontSize: 14, height: 1.5, color: c.txt2)),
                     ),
+                  )
+                : CustomScrollView(
+                    slivers: [
+                      for (final entry in shown) ...[
+                        SliverPadding(
+                          padding: const EdgeInsets.fromLTRB(20, 10, 16, 10),
+                          sliver: SliverToBoxAdapter(
+                            child: Text(entry.key.toUpperCase(),
+                                style: TextStyle(
+                                    fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.2, color: c.txt3)),
+                          ),
+                        ),
+                        SliverPadding(
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+                          sliver: SliverGrid.count(
+                            crossAxisCount: 6,
+                            mainAxisSpacing: 9,
+                            crossAxisSpacing: 9,
+                            children: [
+                              for (final name in entry.value) _tile(c, name),
+                            ],
+                          ),
+                        ),
+                      ],
+                      const SliverToBoxAdapter(child: SizedBox(height: 24)),
+                    ],
                   ),
-              ]),
-            ),
           ),
         ]),
+      ),
+    );
+  }
+
+  Widget _tile(AppColors c, String name) {
+    final on = name == widget.current;
+    return Semantics(
+      button: true,
+      selected: on,
+      label: iconWords(name),
+      child: Material(
+        color: on ? c.acc : c.surf,
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          key: ValueKey('icon-$name'),
+          borderRadius: BorderRadius.circular(14),
+          onTap: () => Navigator.pop(context, name),
+          child: Icon(iconFor(name), size: 23, color: on ? c.accTxt : c.acc),
+        ),
       ),
     );
   }

@@ -11,7 +11,7 @@ const Map<String, String> kThemeLabels = {
   'sepia': 'Sepia',
 };
 
-const List<String> kAccentNames = ['teal', 'indigo', 'amber', 'rose', 'lime'];
+const List<String> kAccentNames = ['teal', 'indigo', 'sky', 'violet', 'rose', 'orange', 'amber', 'lime'];
 
 class AppColors {
   final Color bg, surf, surf2, node, line;
@@ -45,6 +45,9 @@ class AppColors {
     'amber': [Color(0xFFF2D06B), Color(0xFF3A2A05), Color(0xFF8A6206), Color(0xFFFFFFFF)],
     'rose': [Color(0xFFFFA6A6), Color(0xFF45100F), Color(0xFFB7382F), Color(0xFFFFFFFF)],
     'lime': [Color(0xFFB6E77F), Color(0xFF1E3606), Color(0xFF4B7B12), Color(0xFFFFFFFF)],
+    'sky': [Color(0xFF8CCBFF), Color(0xFF0A2A45), Color(0xFF1A6FB8), Color(0xFFFFFFFF)],
+    'violet': [Color(0xFFC9ABFF), Color(0xFF2A1250), Color(0xFF6E3FD1), Color(0xFFFFFFFF)],
+    'orange': [Color(0xFFFFB37A), Color(0xFF3F1C04), Color(0xFFB5590F), Color(0xFFFFFFFF)],
   };
 
   static AppColors resolve(String theme, String accent) {
@@ -176,12 +179,15 @@ class AppColors {
 
   /// Text and icons that sit on top of [fill].
   static Color onColor(Color fill) =>
-      fill.computeLuminance() > 0.42 ? const Color(0xFF10151A) : Colors.white;
+      fill.computeLuminance() > 0.30 ? const Color(0xFF10151A) : Colors.white;
 
   /// This palette with [accent] standing in for the accent. An editor uses it
   /// to dress itself in the colour of the thing being edited, so choosing a
   /// colour shows on every button and chip at once.
-  AppColors withAccent(Color accent) => AppColors(
+  AppColors withAccent(Color accent) {
+    // Something wearing the app's own accent looks exactly like the app.
+    if (accent == acc) return this;
+    return AppColors(
         bg: bg,
         surf: surf,
         surf2: surf2,
@@ -198,6 +204,7 @@ class AppColors {
         onDanger: onDanger,
         isDark: isDark,
       );
+  }
 }
 
 /// Block colours, tuned per mode so light themes stay legible. A block stores

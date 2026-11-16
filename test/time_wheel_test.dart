@@ -46,7 +46,7 @@ void main() {
     ));
     await tester.tap(find.byType(TextButton));
     await tester.pumpAndSettle();
-    expect(find.text('New Task'), findsOneWidget, reason: 'the block sheet should open');
+    expect(find.text('New Block'), findsOneWidget, reason: 'the block sheet should open');
 
     // Every row of the wheel shows a "start – end" range and all of them move
     // together, so the top one is enough to read the wheel's position.

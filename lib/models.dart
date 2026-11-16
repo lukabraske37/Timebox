@@ -29,6 +29,14 @@ String alertLabel(int before) {
   return '${h > 0 ? '${h}h' : ''}${h > 0 && m > 0 ? ' ' : ''}${m > 0 ? '${m}m' : ''} before start';
 }
 
+/// How an alert reads on screen. The stored sentences still say "task", from
+/// before the timeline called its entries blocks.
+String alertText(String alert) => switch (alert) {
+      kAtStart => 'At the start',
+      kAtEnd => 'At the end',
+      _ => alert.replaceFirst(' before start', ' before'),
+    };
+
 /// Minutes ahead of the start that [alert] fires, or null for one that fires
 /// at the end. Reads every label the app has ever written, old presets
 /// included.
