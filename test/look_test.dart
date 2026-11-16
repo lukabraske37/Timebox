@@ -189,8 +189,8 @@ void main() {
     expect(store.selectedKey, today);
   });
 
-  for (final wanted in [true, false]) {
-    testWidgets('a new block ${wanted ? 'starts with an alert' : 'starts with none when that is switched off'}',
+  for (final wanted in [false, true]) {
+    testWidgets('a new block ${wanted ? 'takes the alert, length and colour set in Settings' : 'has no alert unless one was asked for'}',
         (tester) async {
       SharedPreferences.setMockInitialValues({});
       tester.view.physicalSize = const Size(1440, 3200);
@@ -203,8 +203,15 @@ void main() {
       await tester.tap(find.byIcon(Icons.view_timeline).last);
       await tester.pumpAndSettle();
       final store = AppScope.of(tester.element(find.byType(Scaffold).first));
-      store.mutate(() => store.alertNewBlocks = wanted);
-      await tester.pumpAndSettle();
+      if (wanted) {
+        store.mutate(() {
+          store.defaultAlert = alertLabel(10);
+          store.defaultAlertRings = true;
+          store.defaultDuration = 45;
+          store.defaultColor = 6;
+        });
+        await tester.pumpAndSettle();
+      }
 
       await tester.tap(find.byType(FloatingActionButton));
       await tester.pumpAndSettle();
@@ -214,9 +221,49 @@ void main() {
       await tester.pumpAndSettle();
 
       final made = store.blocks.firstWhere((b) => b.title == 'Brand new');
-      expect(made.alerts, wanted ? [kAtStart] : isEmpty);
+      if (wanted) {
+        expect(made.alerts, ['10m before start']);
+        expect(made.rings, ['10m before start']);
+        expect(made.duration, 45);
+        expect(made.color, 6);
+      } else {
+        expect(made.alerts, isEmpty, reason: 'out of the box nothing is added that was not asked for');
+        expect(made.duration, 30);
+      }
     });
   }
+
+  testWidgets('the defaults page sets what a new block starts with', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    tester.view.physicalSize = const Size(1440, 3200);
+    tester.view.devicePixelRatio = 3.5;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(const TimeboxApp());
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Start'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.settings).last);
+    await tester.pumpAndSettle();
+    final store = AppScope.of(tester.element(find.byType(Scaffold).first));
+    expect(store.defaultAlert, isNull);
+
+    await tester.scrollUntilVisible(find.text('New blocks'), 200, scrollable: find.byType(Scrollable).first);
+    await tester.tap(find.text('New blocks'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Before'));
+    await tester.pumpAndSettle();
+    expect(store.defaultAlert, '10m before start');
+    await tester.tap(find.text('30m').first);
+    await tester.pumpAndSettle();
+    expect(store.defaultAlert, '30m before start');
+    await tester.tap(find.text('Alarm'));
+    await tester.pumpAndSettle();
+    expect(store.defaultAlertRings, isTrue);
+    await tester.tap(find.text('None'));
+    await tester.pumpAndSettle();
+    expect(store.defaultAlert, isNull);
+    expect(store.defaultAlertRings, isFalse);
+  });
 
   testWidgets('the habit calendar turns back a month at a time, and never forward past this one',
       (tester) async {

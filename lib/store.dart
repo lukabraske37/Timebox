@@ -99,9 +99,22 @@ class Store extends ChangeNotifier {
   bool notifTasks = true;
   bool notifHabits = true;
 
-  /// Whether a new block starts out with an alert at its start. Off means it
-  /// starts with none and alerts are added only by hand.
-  bool alertNewBlocks = true;
+  // What a new block starts out as, before anything is changed in its editor.
+
+  /// The alert it is given, as stored on a block, or null for none — which
+  /// is how it comes: an alert nobody asked for is one more thing to delete.
+  String? defaultAlert;
+
+  /// Whether that alert rings as an alarm.
+  bool defaultAlertRings = false;
+  int defaultDuration = 30;
+  int defaultColor = 0;
+
+  /// The defaults in a line, for the row in Settings that leads to them.
+  String get defaultsSummary => [
+        durLabel(defaultDuration),
+        defaultAlert == null ? 'no alert' : '${defaultAlertRings ? 'alarm' : 'alert'} ${alertText(defaultAlert!).toLowerCase()}',
+      ].join(' · ');
   bool dailySummary = false;
   int summaryTime = 1260;
   String habitRange = '3m';
@@ -277,7 +290,10 @@ class Store extends ChangeNotifier {
         'notifBlocks': notifBlocks,
         'notifTasks': notifTasks,
         'notifHabits': notifHabits,
-        'alertNewBlocks': alertNewBlocks,
+        'defaultAlert': defaultAlert,
+        'defaultAlertRings': defaultAlertRings,
+        'defaultDuration': defaultDuration,
+        'defaultColor': defaultColor,
         'dailySummary': dailySummary,
         'summaryTime': summaryTime,
         'habitRange': habitRange,
@@ -321,7 +337,12 @@ class Store extends ChangeNotifier {
     notifBlocks = _flag(j['notifBlocks'], true);
     notifTasks = _flag(j['notifTasks'], true);
     notifHabits = _flag(j['notifHabits'], true);
-    alertNewBlocks = _flag(j['alertNewBlocks'], true);
+    defaultAlert = j['defaultAlert'] is String ? j['defaultAlert'] as String : null;
+    defaultAlertRings = _flag(j['defaultAlertRings'], false);
+    final length = j['defaultDuration'];
+    defaultDuration = length is num ? length.toInt().clamp(kStep, 720) : 30;
+    final color = j['defaultColor'];
+    defaultColor = color is num ? color.toInt().clamp(0, 999) : 0;
     dailySummary = _flag(j['dailySummary'], false);
     final summary = j['summaryTime'];
     summaryTime = summary is num ? summary.toInt().clamp(0, 1439) : 1260;
