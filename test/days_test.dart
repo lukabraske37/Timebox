@@ -87,4 +87,28 @@ void main() {
     expect(s.blocksOn(key(today)).single.start, 540, reason: 'today did not');
     expect(s.blocksOn(key(day(2))).single.start, 540, reason: 'nor did the day after');
   });
+
+  test('editing a repeating block keeps the days already changed on their own', () {
+    final s = storeWith([block(id: 'a', on: day(-1), repeat: 'Daily', title: 'Standup')]);
+    s.moveBlock(s.blocksOn(key(day(1))).single.id, 60);
+
+    // What the editor does on Save: hand back a fresh block with the same id.
+    s.replaceBlock(Block(
+        id: 'a', date: key(day(-1)), icon: 'label', title: 'Daily standup', start: 540, end: 600, repeat: 'Daily'));
+
+    expect(s.blocksOn(key(day(1))).map((b) => b.start), [600],
+        reason: 'the moved day must not get the series back on top of it');
+    expect(s.blocksOn(key(day(2))).single.title, 'Daily standup');
+  });
+
+  test('recolouring one day of a series recolours the series and splits nothing off', () {
+    final s = storeWith([block(id: 'a', on: day(-1), repeat: 'Daily', title: 'Standup')]);
+    final tomorrow = s.blocksOn(key(day(1))).single;
+
+    s.recolorBlock(tomorrow.id, 7);
+
+    expect(s.blocks.length, 1, reason: 'a colour is not a reason to detach a day');
+    expect(s.blocksOn(key(today)).single.color, 7);
+    expect(s.blocksOn(key(day(3))).single.color, 7);
+  });
 }

@@ -60,12 +60,7 @@ class InboxScreen extends StatelessWidget {
                   return Panel(
                     padding: const EdgeInsets.all(13),
                     child: Row(children: [
-                      Container(
-                        width: 44,
-                        height: 44,
-                        decoration: BoxDecoration(color: c.surf2, borderRadius: BorderRadius.circular(14)),
-                        child: Icon(iconFor(item.icon), size: 22, color: c.acc),
-                      ),
+                      IconTile(icon: iconFor(item.icon), tone: toneOf(context, item.color)),
                       const SizedBox(width: 14),
                       Expanded(
                         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

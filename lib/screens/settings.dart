@@ -23,27 +23,45 @@ class SettingsScreen extends StatelessWidget {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(18, 6, 18, 40),
           children: [
-            const SectionLabel('Appearance'),
-            Panel(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Row(children: [
-                  Icon(Icons.dark_mode, size: 19, color: c.acc),
-                  const SizedBox(width: 10),
-                  Text('App Theme', style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700, color: c.txt)),
+            // A backup that is weeks old, or was never made, is said here
+            // rather than left to be found two screens down.
+            if (store.daysSinceBackup == null || store.daysSinceBackup! >= 14) ...[
+              Panel(
+                key: const ValueKey('backup-nudge'),
+                color: washOf(c, c.danger),
+                onTap: () => open(const BackupPage()),
+                child: Row(children: [
+                  Icon(Icons.cloud_off, size: 21, color: c.danger),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(
+                        store.daysSinceBackup == null
+                            ? 'No backup yet'
+                            : 'Last backup ${store.daysSinceBackup} days ago',
+                        style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700, color: c.txt),
+                      ),
+                      const SizedBox(height: 3),
+                      Text('Your plans live only on this phone. Save a copy.',
+                          style: TextStyle(fontSize: 12, color: c.txt2)),
+                    ]),
+                  ),
+                  Icon(Icons.chevron_right, size: 20, color: c.txt3),
                 ]),
-                const SizedBox(height: 14),
-                Segmented<String>(
-                  values: const ['dark', 'light', 'sepia'],
-                  labels: const ['Dark', 'Light', 'Sepia'],
-                  value: ['dark', 'light', 'sepia'].contains(store.theme) ? store.theme : 'dark',
-                  onChanged: (v) => store.mutate(() => store.theme = v),
-                ),
-              ]),
+              ),
+              const SizedBox(height: 22),
+            ],
+            const SectionLabel('Appearance'),
+            NavRow(
+              icon: Icons.palette,
+              title: 'Theme and accent',
+              subtitle: '${kThemeLabels[store.theme] ?? 'Dark'} · ${store.accent}',
+              onTap: () => open(const LookPage()),
             ),
             const SizedBox(height: 10),
             SwitchRow(
-              title: 'Color blocks by their icon',
-              subtitle: 'Off tints every node with the accent',
+              title: 'Colours for blocks and habits',
+              subtitle: 'Off tints everything with the accent',
               value: store.blockColorIcons,
               onChanged: (v) => store.mutate(() => store.blockColorIcons = v),
             ),
@@ -97,7 +115,7 @@ class SettingsScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 22),
-            const SectionLabel('General'),
+            const SectionLabel('Alerts'),
             NavRow(
               icon: Icons.notifications,
               title: 'Notifications & Alerts',
@@ -106,14 +124,15 @@ class SettingsScreen extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             NavRow(
-              icon: Icons.palette,
-              title: 'Look and Feel',
-              subtitle: '${kThemeLabels[store.theme] ?? 'Dark'} · ${store.accent}',
-              onTap: () => open(const LookPage()),
+              icon: Icons.music_note,
+              title: 'Alarm sound',
+              subtitle: store.alarmSoundName,
+              onTap: () => open(const AlarmSoundPage()),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 22),
+            const SectionLabel('Your data'),
             NavRow(
-              icon: Icons.download,
+              icon: Icons.save_alt,
               title: 'Backup',
               subtitle: store.daysSinceBackup == null
                   ? 'No backup file yet'
@@ -204,6 +223,14 @@ class NotificationsPage extends StatelessWidget {
     final c = AppScope.colorsOf(context);
     return SubPage(title: 'Notifications & Alerts', children: [
       const AlertCheck(),
+      const SizedBox(height: 22),
+      const SectionLabel('Alarms'),
+      NavRow(
+        icon: Icons.music_note,
+        title: 'Alarm sound',
+        subtitle: store.alarmSoundName,
+        onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AlarmSoundPage())),
+      ),
       const SizedBox(height: 22),
       const SectionLabel('What may alert you'),
       SwitchRow(
@@ -402,6 +429,200 @@ class _AlertCheckState extends State<AlertCheck> with WidgetsBindingObserver {
   }
 }
 
+/// Where the sound an alarm rings with is chosen: the phone's own, one of
+/// the sounds that come with the app, or a file from the phone.
+class AlarmSoundPage extends StatefulWidget {
+  const AlarmSoundPage({super.key});
+
+  @override
+  State<AlarmSoundPage> createState() => _AlarmSoundPageState();
+}
+
+class _AlarmSoundPageState extends State<AlarmSoundPage> {
+  @override
+  void dispose() {
+    // A preview must not carry on playing over whatever comes next.
+    Sounds.stop();
+    super.dispose();
+  }
+
+  Future<void> _pickFile() async {
+    final store = AppScope.of(context);
+    await Sounds.stop();
+    final picked = await Sounds.pickCustom();
+    if (picked == null || !mounted) return;
+    if (picked.file == null) {
+      showNotice(context, picked.error ?? 'That file could not be used.', bad: true);
+      return;
+    }
+    store.setCustomSound(picked.file!, picked.name ?? 'Your sound');
+    showNotice(context, 'Alarms now ring with your sound');
+  }
+
+  Future<void> _ringTest() async {
+    await Sounds.stop();
+    final error = await Notifications.test(alarm: true);
+    if (!mounted) return;
+    showNotice(
+      context,
+      error == null ? 'Alarm rings in 5 seconds' : 'The test alarm could not be set',
+      bad: error != null,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final store = AppScope.of(context);
+    final c = AppScope.colorsOf(context);
+    final hasCustom = store.customSoundFile != null;
+
+    return SubPage(title: 'Alarm sound', children: [
+      _SoundRow(
+        soundKey: kSystemSound,
+        name: 'Phone alarm',
+        about: "Your phone's own alarm sound",
+        selected: store.alarmSound == kSystemSound,
+        onSelect: () {
+          Sounds.stop();
+          store.setAlarmSound(kSystemSound);
+        },
+      ),
+      const SizedBox(height: 22),
+      const SectionLabel('Timebox sounds'),
+      for (final sound in kAlarmSounds) ...[
+        _SoundRow(
+          soundKey: sound.key,
+          name: sound.name,
+          about: sound.about,
+          selected: store.alarmSound == sound.key,
+          // Choosing a sound plays it: hearing it is the point of choosing.
+          onSelect: () {
+            store.setAlarmSound(sound.key);
+            if (Sounds.playing.value != sound.key) Sounds.preview(sound.key);
+          },
+          onPreview: () => Sounds.preview(sound.key),
+        ),
+        const SizedBox(height: 8),
+      ],
+      const SizedBox(height: 14),
+      const SectionLabel('Your own'),
+      if (hasCustom) ...[
+        _SoundRow(
+          soundKey: kCustomSound,
+          name: store.customSoundName ?? 'Your sound',
+          about: 'A file from this phone',
+          selected: store.alarmSound == kCustomSound,
+          onSelect: () {
+            store.setAlarmSound(kCustomSound);
+            if (Sounds.playing.value != kCustomSound) {
+              Sounds.preview(kCustomSound, customFile: store.customSoundFile);
+            }
+          },
+          onPreview: () => Sounds.preview(kCustomSound, customFile: store.customSoundFile),
+        ),
+        const SizedBox(height: 8),
+      ],
+      PrimaryButton(
+        label: hasCustom ? 'Choose a different file' : 'Choose a sound file',
+        icon: Icons.audio_file,
+        background: c.surf2,
+        foreground: c.txt,
+        onTap: _pickFile,
+      ),
+      const SizedBox(height: 10),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: Text(
+          'Any song or recording on the phone. Timebox keeps its own copy, so the alarm still rings '
+          'if the original is moved or deleted.',
+          style: TextStyle(fontSize: 12, height: 1.5, color: c.txt3),
+        ),
+      ),
+      const SizedBox(height: 24),
+      PrimaryButton(label: 'Ring a test alarm', icon: Icons.alarm, onTap: _ringTest),
+      const SizedBox(height: 10),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: Text(
+          'The preview plays through the app. The test rings the way a real alarm will — on the alarm '
+          'volume, until you stop it — so it is the one to trust.',
+          style: TextStyle(fontSize: 12, height: 1.5, color: c.txt3),
+        ),
+      ),
+    ]);
+  }
+}
+
+class _SoundRow extends StatelessWidget {
+  final String soundKey;
+  final String name;
+  final String about;
+  final bool selected;
+  final VoidCallback onSelect;
+
+  /// Null for a sound the app cannot play itself, such as the phone's own.
+  final VoidCallback? onPreview;
+
+  const _SoundRow({
+    required this.soundKey,
+    required this.name,
+    required this.about,
+    required this.selected,
+    required this.onSelect,
+    this.onPreview,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = AppScope.colorsOf(context);
+    return Panel(
+      key: ValueKey('sound-$soundKey'),
+      color: selected ? washOf(c, c.acc) : c.surf,
+      padding: const EdgeInsets.fromLTRB(14, 6, 6, 6),
+      onTap: onSelect,
+      child: Row(children: [
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          width: 22,
+          height: 22,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: selected ? c.acc : Colors.transparent,
+            border: Border.all(color: selected ? c.acc : c.txt3, width: 2),
+          ),
+          child: selected ? Icon(Icons.check, size: 14, color: c.accTxt) : null,
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600, color: c.txt)),
+              const SizedBox(height: 3),
+              Text(about, style: TextStyle(fontSize: 12, color: c.txt3)),
+            ]),
+          ),
+        ),
+        if (onPreview != null)
+          ValueListenableBuilder<String?>(
+            valueListenable: Sounds.playing,
+            builder: (_, playing, __) => IconButton(
+              tooltip: playing == soundKey ? 'Stop' : 'Play',
+              onPressed: onPreview,
+              icon: Icon(playing == soundKey ? Icons.stop_circle : Icons.play_circle,
+                  size: 30, color: playing == soundKey ? c.acc : c.txt2),
+            ),
+          )
+        else
+          const SizedBox(height: 48),
+      ]),
+    );
+  }
+}
+
 class LookPage extends StatelessWidget {
   const LookPage({super.key});
 
@@ -460,22 +681,36 @@ class LookPage extends StatelessWidget {
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text('Accent', style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700, color: c.txt)),
           const SizedBox(height: 14),
-          Row(children: [
-            for (final name in kAccentNames) ...[
-              GestureDetector(
-                onTap: () => store.mutate(() => store.accent = name),
-                child: Container(
-                  width: 36,
-                  height: 36,
-                  margin: const EdgeInsets.only(right: 14),
-                  decoration: BoxDecoration(
-                    color: AppColors.accentSwatch(name),
-                    shape: BoxShape.circle,
-                    border: store.accent == name ? Border.all(color: c.txt, width: 2.5) : null,
+          Wrap(spacing: 12, runSpacing: 12, children: [
+            for (final name in kAccentNames)
+              Semantics(
+                button: true,
+                selected: store.accent == name,
+                label: name,
+                child: GestureDetector(
+                  key: ValueKey('accent-$name'),
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => store.mutate(() => store.accent = name),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 140),
+                    width: 40,
+                    height: 40,
+                    padding: EdgeInsets.all(store.accent == name ? 4 : 0),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: store.accent == name
+                          ? Border.all(color: AppColors.accentSwatch(name), width: 2.5)
+                          : null,
+                    ),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(color: AppColors.accentSwatch(name), shape: BoxShape.circle),
+                      child: store.accent == name
+                          ? Icon(Icons.check, size: 17, color: AppColors.onColor(AppColors.accentSwatch(name)))
+                          : null,
+                    ),
                   ),
                 ),
               ),
-            ],
           ]),
           const SizedBox(height: 14),
           Text('Accent drives buttons, the now line and every highlight. Block colors stay their own.',

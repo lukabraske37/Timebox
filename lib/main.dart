@@ -318,7 +318,17 @@ class Shell extends StatelessWidget {
         }
       },
       child: Scaffold(
-        body: SafeArea(bottom: false, child: screens[store.tab]),
+        body: SafeArea(
+          bottom: false,
+          // Tabs ease into one another instead of the screen simply being a
+          // different one.
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 170),
+            switchInCurve: Curves.easeOut,
+            switchOutCurve: Curves.easeIn,
+            child: KeyedSubtree(key: ValueKey(store.tab), child: screens[store.tab]),
+          ),
+        ),
         bottomNavigationBar: _BottomNav(),
         // Selecting a block opens the timeline's action bar in the same corner,
         // and the Scaffold draws this button over it, right on top of Edit.

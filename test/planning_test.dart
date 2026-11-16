@@ -91,25 +91,42 @@ void zoomTests() {
   });
 }
 
-/// Finished tasks used to hold their place in the list, pushing what is still
-/// open further down as the day went on.
+/// The task list is read top to bottom as "what first": late, today, tomorrow,
+/// later, someday — and what is finished out of the way at the foot.
 void taskOrderTests() {
-  test('finished tasks sink below the open ones', () {
-    final s = Store();
-    s.tasks = [
-      Task(id: '1', title: 'done first', done: true),
-      Task(id: '2', title: 'still open'),
-      Task(id: '3', title: 'also done', done: true),
-      Task(id: '4', title: 'open too'),
-    ];
+  tearDown(() => clock = DateTime.now);
 
-    final ordered = [
-      ...s.tasks.where((t) => !t.done),
-      ...s.tasks.where((t) => t.done),
-    ];
+  test('tasks are grouped by when they fall due', () {
+    clock = () => DateTime(2026, 11, 16, 10);
+    final sections = taskSections([
+      Task(id: '1', title: 'done first', done: true, date: '2026-11-16'),
+      Task(id: '2', title: 'no date'),
+      Task(id: '3', title: 'next week', date: '2026-11-23'),
+      Task(id: '4', title: 'this evening', date: '2026-11-16', time: 1140),
+      Task(id: '5', title: 'this morning', date: '2026-11-16', time: 540),
+      Task(id: '6', title: 'today, any time', date: '2026-11-16'),
+      Task(id: '7', title: 'last week', date: '2026-11-09'),
+      Task(id: '8', title: 'tomorrow', date: '2026-11-17'),
+      Task(id: '9', title: 'thursday', date: '2026-11-19'),
+      Task(id: '10', title: 'no date either'),
+    ]);
 
-    expect(ordered.map((t) => t.title),
-        ['still open', 'open too', 'done first', 'also done']);
+    expect(sections.map((s) => s.title), ['Overdue', 'Today', 'Tomorrow', 'Later', 'Someday', 'Done']);
+    final by = {for (final s in sections) s.title: s.tasks.map((t) => t.title).toList()};
+    expect(by['Overdue'], ['last week']);
+    expect(by['Today'], ['this morning', 'this evening', 'today, any time'],
+        reason: 'in the order the reminders come, and anything untimed after them');
+    expect(by['Later'], ['thursday', 'next week']);
+    expect(by['Someday'], ['no date', 'no date either'], reason: 'in the order they were written down');
+    expect(by['Done'], ['done first'], reason: 'a finished task leaves its day and sinks to the foot');
+    expect(sections.first.late, isTrue);
+    expect(sections.last.done, isTrue);
+  });
+
+  test('a heading with nothing under it is not shown', () {
+    final sections = taskSections([Task(id: '1', title: 'only this')]);
+    expect(sections.map((s) => s.title), ['Someday']);
+    expect(taskSections([]), isEmpty);
   });
 }
 

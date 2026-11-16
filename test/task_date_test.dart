@@ -43,8 +43,8 @@ void main() {
     final tomorrow = dateKey(DateTime.now().add(const Duration(days: 1)));
     expect(store.tasks.firstWhere((t) => t.id == task.id).date, tomorrow,
         reason: 'the chosen day should be saved on the task');
-    expect(find.text('Tomorrow'), findsWidgets,
-        reason: 'and the list should show which day it is due');
+    expect(find.textContaining('TOMORROW'), findsOneWidget,
+        reason: 'and the list should file it under the day it is due');
   });
 
   test('a due date is written out with the rest of the task', () {

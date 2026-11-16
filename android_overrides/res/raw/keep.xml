@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The alarm sounds are looked up by name at run time, which the resource
+     shrinker cannot see. Without this it would be free to drop them. -->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@raw/alarm_*"/>
