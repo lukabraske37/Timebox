@@ -45,20 +45,23 @@ today, tomorrow, or any date off the calendar — and an optional reminder, and
 the list keeps whatever is due soonest at the top. Anything overdue says so in
 red, anything without a date waits at the bottom until you give it one.
 
-**Habits.** Tick them off daily and watch the streak grow. Charts show the last
-five weeks up to a full year.
+**Habits.** Tick them off daily and watch the streak grow. Each has its own
+icon and colour, the last week at a glance in the list, and a page of its own
+with the current and best run, a calendar you can correct by tapping, and
+charts from five weeks up to a full year.
 
 **Alarms.** Any reminder can ring as an alarm instead: on the alarm volume, even
 on silent, until you stop it or snooze it for ten minutes. Every alert is set to
-the minute, each one chooses for itself whether it rings, and Settings has a
-button to try a notification or an alarm on the spot.
+the minute and chooses for itself whether it rings. Pick the sound it rings
+with — your phone's own, one of nine that come with the app, or any song or
+recording on the phone — and try it on the spot.
 
 **Reminders.** Alerts when a block starts or ends, or 15 minutes / half an hour /
 an hour before. Tasks and habits get their own, plus one optional summary of the
 day.
 
-**Make it yours.** Six themes, five accent colours, and a 12- or 24-hour
-clock.
+**Make it yours.** Six themes, eight accent colours, twelve colours and four
+hundred icons for your blocks and habits, and a 12- or 24-hour clock.
 
 **Your data is yours, and hard to lose.** Save everything to a single backup
 file — to Downloads, a Drive folder, wherever you choose — and load it back
