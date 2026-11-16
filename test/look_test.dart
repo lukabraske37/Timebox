@@ -217,4 +217,55 @@ void main() {
       expect(made.alerts, wanted ? [kAtStart] : isEmpty);
     });
   }
+
+  testWidgets('the habit calendar turns back a month at a time, and never forward past this one',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    tester.view.physicalSize = const Size(1440, 3200);
+    tester.view.devicePixelRatio = 3.5;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(const TimeboxApp());
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Start'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.local_fire_department).last);
+    await tester.pumpAndSettle();
+    final store = AppScope.of(tester.element(find.byType(Scaffold).first));
+    final habit = store.habits.first;
+    await tester.tap(find.text(habit.title));
+    await tester.pumpAndSettle();
+
+    final now = DateTime.now();
+    String title() => tester.widget<Text>(find.byKey(const ValueKey('month-title'))).data!;
+    expect(title(), '${monthName(now.month)} ${now.year}');
+    expect(tester.widget<IconButton>(find.byKey(const ValueKey('month-Next'))).onPressed, isNull);
+
+    await tester.tap(find.byKey(const ValueKey('month-Previous')));
+    await tester.pumpAndSettle();
+    final last = DateTime(now.year, now.month - 1, 1);
+    expect(title(), '${monthName(last.month)} ${last.year}');
+
+    // A day of that month can be ticked from here.
+    final key = dateKey(DateTime(last.year, last.month, 3));
+    final was = habit.doneOn(key);
+    await tester.ensureVisible(find.byKey(ValueKey('day-$key')));
+    await tester.tap(find.byKey(ValueKey('day-$key')));
+    await tester.pumpAndSettle();
+    expect(habit.doneOn(key), !was);
+
+    await tester.ensureVisible(find.byKey(const ValueKey('month-Next')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('month-Next')));
+    await tester.pumpAndSettle();
+    expect(title(), '${monthName(now.month)} ${now.year}');
+  });
+
+  test('a range saved by an earlier build falls back to one that still exists', () async {
+    SharedPreferences.setMockInitialValues({'timebox.state': '{"booted": true, "habitRange": "5w"}'});
+    final store = Store(notifications: false);
+    await store.load();
+    addTearDown(store.dispose);
+    expect(kRanges.map((r) => r.key), contains(store.habitRange));
+    expect(kRanges.last.allTime, isTrue);
+  });
 }

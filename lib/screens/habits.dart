@@ -186,15 +186,23 @@ class HabitDetail extends StatelessWidget {
   }
 }
 
-class _HabitPage extends StatelessWidget {
+class _HabitPage extends StatefulWidget {
   final Habit habit;
   const _HabitPage({required this.habit});
+
+  @override
+  State<_HabitPage> createState() => _HabitPageState();
+}
+
+class _HabitPageState extends State<_HabitPage> {
+  /// How many months back the calendar is turned; zero is this month.
+  int _monthsBack = 0;
 
   @override
   Widget build(BuildContext context) {
     final store = AppScope.of(context);
     final c = AppScope.colorsOf(context);
-    final h = habit;
+    final h = widget.habit;
     final range = kRanges.firstWhere((r) => r.key == store.habitRange, orElse: () => kRanges.first);
     final today = todayKey();
     final isDone = h.doneOn(today);
@@ -205,7 +213,7 @@ class _HabitPage extends StatelessWidget {
     final ticked = h.history.keys.where(h.doneOn);
     final first = ticked.isEmpty ? null : ticked.reduce((a, b) => a.compareTo(b) < 0 ? a : b);
     final age = first == null ? 0 : daysBetween(keyToDate(first), clock()) + 1;
-    final window = age < range.days ? age : range.days;
+    final window = range.allTime || age < range.days ? age : range.days;
     final hits = h.hitsIn(window);
 
     return Scaffold(
@@ -271,21 +279,23 @@ class _HabitPage extends StatelessWidget {
                     ),
                   ),
                 ]),
+                const SizedBox(height: 10),
+                _monthCard(store, c, h),
                 const SizedBox(height: 22),
                 const SectionLabel('History'),
                 Segmented<String>(
                   values: kRanges.map((r) => r.key).toList(),
                   labels: kRanges.map((r) => r.label).toList(),
-                  value: store.habitRange,
+                  value: range.key,
                   onChanged: (v) => store.mutate(() => store.habitRange = v),
                 ),
                 const SizedBox(height: 10),
                 Panel(
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    _cardTitle(c, range.monthly ? 'By month' : 'By week', 'days ticked'),
+                    _cardTitle(c, 'By month', 'days ticked'),
                     const SizedBox(height: 12),
-                    SizedBox(height: 128, child: _bars(c, h, range)),
+                    SizedBox(height: 128, child: _bars(c, h, range, age)),
                   ]),
                 ),
                 const SizedBox(height: 10),
@@ -294,11 +304,11 @@ class _HabitPage extends StatelessWidget {
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     _cardTitle(
                       c,
-                      'Last ${range.label.toLowerCase()}',
-                      range.days <= 40 ? 'tap a day to change it' : 'one column is one week',
+                      range.allTime ? 'Since you started' : 'Last ${range.label.toLowerCase()}',
+                      'one column is one week',
                     ),
                     const SizedBox(height: 14),
-                    range.days <= 40 ? _calendar(store, c, h) : _heatmap(store, c, h, range),
+                    _heatmap(store, c, h, range, age),
                   ]),
                 ),
               ],
@@ -440,34 +450,25 @@ class _HabitPage extends StatelessWidget {
 
   // ---------- bars ----------
 
-  Widget _bars(AppColors c, Habit h, HabitRange range) {
+  Widget _bars(AppColors c, Habit h, HabitRange range, int age) {
     final now = clock();
     final bars = <({String label, int count, double ratio})>[];
 
-    if (range.monthly) {
-      for (var i = range.bars - 1; i >= 0; i--) {
-        final month = DateTime(now.year, now.month - i, 1);
-        final len = DateTime(month.year, month.month + 1, 0).day;
-        var n = 0;
-        for (var d = 1; d <= len; d++) {
-          if (h.doneOn(dateKey(DateTime(month.year, month.month, d)))) n++;
-        }
-        bars.add((label: monthShortLabel(month.month, range.bars <= 6), count: n, ratio: n / len));
+    // All time shows every month since the first tick, up to a year of them:
+    // more would be bars too thin to read.
+    var count = range.bars;
+    if (range.allTime) {
+      final first = addDays(now, -(age > 0 ? age - 1 : 0));
+      count = ((now.year - first.year) * 12 + now.month - first.month + 1).clamp(1, 12);
+    }
+    for (var i = count - 1; i >= 0; i--) {
+      final month = DateTime(now.year, now.month - i, 1);
+      final len = DateTime(month.year, month.month + 1, 0).day;
+      var n = 0;
+      for (var d = 1; d <= len; d++) {
+        if (h.doneOn(dateKey(DateTime(month.year, month.month, d)))) n++;
       }
-    } else {
-      for (var w = range.bars - 1; w >= 0; w--) {
-        var n = 0;
-        for (var d = 0; d < 7; d++) {
-          if (h.doneOn(dayKey(-(w * 7 + d)))) n++;
-        }
-        // Each bar is seven days ending on the date under it.
-        final ends = addDays(now, -w * 7);
-        bars.add((
-          label: w == 0 ? 'now' : (range.bars > 6 ? '${ends.day}' : '${ends.day} ${monthShort(ends.month)}'),
-          count: n,
-          ratio: n / 7,
-        ));
-      }
+      bars.add((label: monthShortLabel(month.month, count <= 6), count: n, ratio: n / len));
     }
 
     return Row(
@@ -515,36 +516,82 @@ class _HabitPage extends StatelessWidget {
     );
   }
 
-  // ---------- five weeks as a calendar ----------
+  // ---------- one month as a calendar ----------
 
-  /// Whole weeks ending with this one, laid out under their weekdays, every
-  /// day a button. Days still to come are shown but cannot be ticked.
-  Widget _calendar(Store store, AppColors c, Habit h) {
+  /// A month at a time, laid out under its weekdays, every day a button.
+  /// The arrows turn back through earlier months; there is nothing to turn
+  /// forward to past the present one.
+  Widget _monthCard(Store store, AppColors c, Habit h) {
     final now = clock();
     final today = DateTime(now.year, now.month, now.day);
-    final shift = store.sundayFirst ? today.weekday % 7 : today.weekday - 1;
-    final start = addDays(today, -shift - 28);
+    final first = DateTime(now.year, now.month - _monthsBack, 1);
+    final length = DateTime(first.year, first.month + 1, 0).day;
+    final lead = store.sundayFirst ? first.weekday % 7 : first.weekday - 1;
     final order = store.sundayFirst ? [6, 0, 1, 2, 3, 4, 5] : [0, 1, 2, 3, 4, 5, 6];
+    // Days that have come, so a month in progress is not marked down for the
+    // days it has not reached.
+    final reached = _monthsBack == 0 ? today.day : length;
+    var ticked = 0;
+    for (var d = 1; d <= length; d++) {
+      if (h.doneOn(dateKey(DateTime(first.year, first.month, d)))) ticked++;
+    }
 
-    return Column(children: [
-      Row(children: [
-        for (final i in order)
+    Widget arrow(IconData icon, String label, VoidCallback? onTap) => IconButton(
+          key: ValueKey('month-$label'),
+          tooltip: '$label month',
+          onPressed: onTap,
+          visualDensity: VisualDensity.compact,
+          icon: Icon(icon, size: 24, color: onTap == null ? c.txt3.withOpacity(0.35) : c.txt2),
+        );
+
+    return Panel(
+      padding: const EdgeInsets.fromLTRB(16, 8, 8, 16),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
           Expanded(
-            child: Text(_weekdayInitials[i],
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: c.txt3)),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('${monthName(first.month)} ${first.year}',
+                  key: const ValueKey('month-title'),
+                  style: TextStyle(fontSize: 15.5, fontWeight: FontWeight.w800, color: c.txt)),
+              const SizedBox(height: 2),
+              Text('$ticked of $reached days · tap a day to change it',
+                  style: TextStyle(fontSize: 12, color: c.txt3)),
+            ]),
           ),
-      ]),
-      const SizedBox(height: 8),
-      for (var week = 0; week < 5; week++)
+          arrow(Icons.chevron_left, 'Previous', () => setState(() => _monthsBack++)),
+          arrow(Icons.chevron_right, 'Next', _monthsBack == 0 ? null : () => setState(() => _monthsBack--)),
+        ]),
+        const SizedBox(height: 10),
         Padding(
-          padding: EdgeInsets.only(bottom: week == 4 ? 0 : 6),
-          child: Row(children: [
-            for (var d = 0; d < 7; d++)
-              Expanded(child: _calendarDay(store, c, h, addDays(start, week * 7 + d), today)),
+          padding: const EdgeInsets.only(right: 8),
+          child: Column(children: [
+            Row(children: [
+              for (final i in order)
+                Expanded(
+                  child: Text(_weekdayInitials[i],
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: c.txt3)),
+                ),
+            ]),
+            const SizedBox(height: 8),
+            for (var week = 0; week * 7 < lead + length; week++)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(children: [
+                  for (var d = 0; d < 7; d++)
+                    Expanded(
+                      child: () {
+                        final day = week * 7 + d - lead + 1;
+                        if (day < 1 || day > length) return const SizedBox.shrink();
+                        return _calendarDay(store, c, h, DateTime(first.year, first.month, day), today);
+                      }(),
+                    ),
+                ]),
+              ),
           ]),
         ),
-    ]);
+      ]),
+    );
   }
 
   Widget _calendarDay(Store store, AppColors c, Habit h, DateTime day, DateTime today) {
@@ -574,11 +621,9 @@ class _HabitPage extends StatelessWidget {
               border: isToday && !hit ? Border.all(color: c.acc, width: 2) : null,
             ),
             child: Text(
-              // The first of a month says which month, so a run of numbers
-              // that starts again at 1 is not a puzzle.
-              day.day == 1 ? monthShort(day.month) : '${day.day}',
+              '${day.day}',
               style: TextStyle(
-                fontSize: day.day == 1 ? 11 : 13,
+                fontSize: 13,
                 fontWeight: FontWeight.w700,
                 color: hit ? c.accTxt : (future ? c.txt3.withOpacity(0.5) : c.txt2),
               ),
@@ -592,15 +637,17 @@ class _HabitPage extends StatelessWidget {
   // ---------- months as a heat map ----------
 
   /// Too many days to make buttons of: a picture of the run, read left to
-  /// right, a column a week. A year is cut into two halves so its squares
-  /// stay large enough to tell apart.
-  Widget _heatmap(Store store, AppColors c, Habit h, HabitRange range) {
+  /// right, a column a week. Anything over half a year is cut into rows of
+  /// half a year so its squares stay large enough to tell apart.
+  Widget _heatmap(Store store, AppColors c, Habit h, HabitRange range, int age) {
     final now = clock();
     final today = DateTime(now.year, now.month, now.day);
     final shift = store.sundayFirst ? today.weekday % 7 : today.weekday - 1;
     final thisWeek = addDays(today, -shift);
-    final weeks = (range.days / 7).ceil();
-    const perRow = 26;
+    // All time runs from the first tick, but never fewer than three months
+    // of squares nor more than two years of them.
+    final weeks = range.allTime ? (age / 7).ceil().clamp(13, 104) : (range.days / 7).ceil();
+    final perRow = weeks < 26 ? weeks : 26;
     final rows = (weeks / perRow).ceil();
 
     return Column(children: [
