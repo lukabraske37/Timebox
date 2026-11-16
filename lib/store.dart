@@ -95,6 +95,10 @@ class Store extends ChangeNotifier {
   bool notifBlocks = true;
   bool notifTasks = true;
   bool notifHabits = true;
+
+  /// Whether a new block starts out with an alert at its start. Off means it
+  /// starts with none and alerts are added only by hand.
+  bool alertNewBlocks = true;
   bool dailySummary = false;
   int summaryTime = 1260;
   String habitRange = '5w';
@@ -270,6 +274,7 @@ class Store extends ChangeNotifier {
         'notifBlocks': notifBlocks,
         'notifTasks': notifTasks,
         'notifHabits': notifHabits,
+        'alertNewBlocks': alertNewBlocks,
         'dailySummary': dailySummary,
         'summaryTime': summaryTime,
         'habitRange': habitRange,
@@ -313,6 +318,7 @@ class Store extends ChangeNotifier {
     notifBlocks = _flag(j['notifBlocks'], true);
     notifTasks = _flag(j['notifTasks'], true);
     notifHabits = _flag(j['notifHabits'], true);
+    alertNewBlocks = _flag(j['alertNewBlocks'], true);
     dailySummary = _flag(j['dailySummary'], false);
     final summary = j['summaryTime'];
     summaryTime = summary is num ? summary.toInt().clamp(0, 1439) : 1260;

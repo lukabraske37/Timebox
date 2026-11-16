@@ -232,6 +232,13 @@ class NotificationsPage extends StatelessWidget {
         onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AlarmSoundPage())),
       ),
       const SizedBox(height: 22),
+      SwitchRow(
+        title: 'Alert on new blocks',
+        subtitle: store.alertNewBlocks ? 'A new block starts with an alert at its start' : 'A new block starts with no alerts',
+        value: store.alertNewBlocks,
+        onChanged: (v) => store.mutate(() => store.alertNewBlocks = v),
+      ),
+      const SizedBox(height: 22),
       const SectionLabel('What may alert you'),
       SwitchRow(
         title: 'Timeline blocks',

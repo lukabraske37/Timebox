@@ -188,4 +188,33 @@ void main() {
     await tester.pumpAndSettle();
     expect(store.selectedKey, today);
   });
+
+  for (final wanted in [true, false]) {
+    testWidgets('a new block ${wanted ? 'starts with an alert' : 'starts with none when that is switched off'}',
+        (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      tester.view.physicalSize = const Size(1440, 3200);
+      tester.view.devicePixelRatio = 3.5;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(const TimeboxApp());
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Start'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byIcon(Icons.view_timeline).last);
+      await tester.pumpAndSettle();
+      final store = AppScope.of(tester.element(find.byType(Scaffold).first));
+      store.mutate(() => store.alertNewBlocks = wanted);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byType(FloatingActionButton));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).first, 'Brand new');
+      await tester.pump(const Duration(seconds: 25)); // long enough for the clock to tick under the sheet
+      await tester.tap(find.text('Create Block'));
+      await tester.pumpAndSettle();
+
+      final made = store.blocks.firstWhere((b) => b.title == 'Brand new');
+      expect(made.alerts, wanted ? [kAtStart] : isEmpty);
+    });
+  }
 }
