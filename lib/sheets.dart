@@ -95,10 +95,16 @@ class _BlockSheetState extends State<_BlockSheet> {
     if (widget.existing == null && widget.startAt == null && !_startPicked) {
       _start = AppScope.of(context).nextFreeStart();
     }
-    // The same goes for the alert a new block starts with: given once, if
-    // Settings asks for one, and after that left as the user has it.
-    if (widget.existing == null && !_startPicked && AppScope.of(context).alertNewBlocks) {
-      _alerts = [kAtStart];
+    // The same goes for what a new block starts out as — length, colour and
+    // alert come from Settings once, and after that are the user's.
+    if (widget.existing == null && !_startPicked) {
+      final store = AppScope.of(context);
+      if (widget.fill == null) _dur = store.defaultDuration;
+      _color = store.defaultColor;
+      if (store.defaultAlert != null) {
+        _alerts = [store.defaultAlert!];
+        if (store.defaultAlertRings) _rings = {store.defaultAlert!};
+      }
     }
     _startPicked = true;
   }

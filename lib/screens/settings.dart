@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models.dart';
 import '../services.dart';
+import '../sheets.dart';
 import '../store.dart';
 import '../theme.dart';
 import '../ui.dart';
@@ -67,6 +68,13 @@ class SettingsScreen extends StatelessWidget {
             ),
             const SizedBox(height: 22),
             const SectionLabel('Timeline'),
+            NavRow(
+              icon: Icons.add_box,
+              title: 'New blocks',
+              subtitle: store.defaultsSummary,
+              onTap: () => open(const DefaultsPage()),
+            ),
+            const SizedBox(height: 10),
             Panel(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Row(children: [
@@ -230,13 +238,6 @@ class NotificationsPage extends StatelessWidget {
         title: 'Alarm sound',
         subtitle: store.alarmSoundName,
         onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AlarmSoundPage())),
-      ),
-      const SizedBox(height: 22),
-      SwitchRow(
-        title: 'Alert on new blocks',
-        subtitle: store.alertNewBlocks ? 'A new block starts with an alert at its start' : 'A new block starts with no alerts',
-        value: store.alertNewBlocks,
-        onChanged: (v) => store.mutate(() => store.alertNewBlocks = v),
       ),
       const SizedBox(height: 22),
       const SectionLabel('What may alert you'),
@@ -627,6 +628,107 @@ class _SoundRow extends StatelessWidget {
           const SizedBox(height: 48),
       ]),
     );
+  }
+}
+
+/// What a new block starts out as. Everything here can still be changed in
+/// the block's own editor; this only decides where it begins.
+class DefaultsPage extends StatelessWidget {
+  const DefaultsPage({super.key});
+
+  static const _before = [5, 10, 15, 30, 60];
+
+  @override
+  Widget build(BuildContext context) {
+    final store = AppScope.of(context);
+    final c = AppScope.colorsOf(context);
+    final alert = store.defaultAlert;
+    final before = alert == null ? null : alertBefore(alert);
+    // 'none', 'start', 'before' or 'end'.
+    final when = alert == null
+        ? 'none'
+        : before == null
+            ? 'end'
+            : (before == 0 ? 'start' : 'before');
+
+    return SubPage(title: 'New blocks', children: [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(4, 0, 4, 16),
+        child: Text('How a block starts out when you make one. Each block can still be changed in its own editor.',
+            style: TextStyle(fontSize: 13, height: 1.5, color: c.txt2)),
+      ),
+      const SectionLabel('Alert'),
+      Panel(
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Segmented<String>(
+            values: const ['none', 'start', 'before', 'end'],
+            labels: const ['None', 'At start', 'Before', 'At end'],
+            value: when,
+            onChanged: (v) => store.mutate(() {
+              store.defaultAlert = switch (v) {
+                'start' => kAtStart,
+                'end' => kAtEnd,
+                'before' => alertLabel(before != null && before > 0 ? before : 10),
+                _ => null,
+              };
+              if (v == 'none') store.defaultAlertRings = false;
+            }),
+          ),
+          if (when == 'before') ...[
+            const SizedBox(height: 12),
+            Row(children: [
+              for (final m in _before) ...[
+                if (m != _before.first) const SizedBox(width: 6),
+                Expanded(
+                  child: PillButton(
+                    label: durLabel(m),
+                    height: 38,
+                    selected: before == m,
+                    onTap: () => store.mutate(() => store.defaultAlert = alertLabel(m)),
+                  ),
+                ),
+              ],
+            ]),
+          ],
+          const SizedBox(height: 12),
+          if (when == 'none')
+            Text('A new block has no alert until you add one.',
+                style: TextStyle(fontSize: 12.5, height: 1.4, color: c.txt3))
+          else
+            AlarmChoice(
+              alarm: store.defaultAlertRings,
+              onChanged: (v) => store.mutate(() => store.defaultAlertRings = v),
+            ),
+        ]),
+      ),
+      const SizedBox(height: 22),
+      const SectionLabel('Length'),
+      Panel(
+        child: Row(children: [
+          for (final m in kDurations) ...[
+            if (m != kDurations.first) const SizedBox(width: 6),
+            Expanded(
+              child: PillButton(
+                label: durLabel(m),
+                height: 40,
+                selected: store.defaultDuration == m,
+                onTap: () => store.mutate(() => store.defaultDuration = m),
+              ),
+            ),
+          ],
+        ]),
+      ),
+      if (store.blockColorIcons) ...[
+        const SizedBox(height: 22),
+        const SectionLabel('Colour'),
+        Panel(
+          child: ColorRow(
+            value: store.defaultColor,
+            onChanged: (v) => store.mutate(() => store.defaultColor = v ?? 0),
+          ),
+        ),
+      ],
+    ]);
   }
 }
 
