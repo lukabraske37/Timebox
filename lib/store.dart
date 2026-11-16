@@ -126,7 +126,7 @@ class Store extends ChangeNotifier {
   final bool notifications;
 
   Store({this.notifications = true}) {
-    selected = DateTime.now();
+    selected = clock();
   }
 
   double get ppm => kZoom[zoom] ?? 0.85;
@@ -167,7 +167,7 @@ class Store extends ChangeNotifier {
       }
     }
     _viewDay = todayKey();
-    selected = DateTime.now();
+    selected = clock();
     locked = booted && biometric;
     _tick = Timer.periodic(const Duration(seconds: 20), (_) => _onTick());
     notifyListeners();
@@ -214,7 +214,7 @@ class Store extends ChangeNotifier {
     final today = todayKey();
     if (today != _viewDay) {
       _viewDay = today;
-      selected = DateTime.now();
+      selected = clock();
       weekOffset = 0;
       selectedBlockId = null;
       _syncNotifications();
@@ -395,12 +395,12 @@ class Store extends ChangeNotifier {
     });
   }
 
-  void markBackedUp() => mutate(() => lastBackupAt = DateTime.now().toIso8601String());
+  void markBackedUp() => mutate(() => lastBackupAt = clock().toIso8601String());
 
   /// Whole days since a backup file last left the app, or null if never.
   int? get daysSinceBackup {
     final at = lastBackupAt == null ? null : DateTime.tryParse(lastBackupAt!);
-    return at == null ? null : DateTime.now().difference(at).inDays;
+    return at == null ? null : clock().difference(at).inDays;
   }
 
   // ---------- undo ----------
@@ -440,13 +440,13 @@ class Store extends ChangeNotifier {
 
   void leftApp() {
     flush();
-    _leftAt ??= DateTime.now();
+    _leftAt ??= clock();
   }
 
   void cameBack() {
     final left = _leftAt;
     _leftAt = null;
-    if (biometric && booted && left != null && DateTime.now().difference(left) >= lockAfter) {
+    if (biometric && booted && left != null && clock().difference(left) >= lockAfter) {
       locked = true;
     }
     syncToToday();
@@ -458,7 +458,7 @@ class Store extends ChangeNotifier {
     // the scheduler the next few days as they are actually planned.
     final upcoming = <Block>[];
     for (var i = 0; i < 8; i++) {
-      upcoming.addAll(blocksOn(dateKey(DateTime.now().add(Duration(days: i)))));
+      upcoming.addAll(blocksOn(dayKey(i)));
     }
     Notifications.sync(
       blocks: upcoming,
@@ -482,14 +482,12 @@ class Store extends ChangeNotifier {
   // ---------- days ----------
 
   DateTime get weekStart {
-    final today = DateTime.now();
+    final today = clock();
     final shift = sundayFirst ? today.weekday % 7 : today.weekday - 1;
-    return DateTime(today.year, today.month, today.day)
-        .subtract(Duration(days: shift))
-        .add(Duration(days: weekOffset * 7));
+    return addDays(DateTime(today.year, today.month, today.day), weekOffset * 7 - shift);
   }
 
-  List<DateTime> get weekDays => List.generate(7, (i) => weekStart.add(Duration(days: i)));
+  List<DateTime> get weekDays => List.generate(7, (i) => addDays(weekStart, i));
 
   /// Everything planned for [key]: the blocks actually filed on that date,
   /// plus the copies any repeating block casts forward onto it.
@@ -515,7 +513,7 @@ class Store extends ChangeNotifier {
       case 'Daily':
         return true;
       case 'Weekly':
-        return day.difference(from).inDays % 7 == 0;
+        return daysBetween(from, day) % 7 == 0;
       case 'Monthly':
         return day.day == from.day;
       default:
@@ -693,7 +691,7 @@ class Store extends ChangeNotifier {
 
   // ---------- edits ----------
 
-  String _id() => DateTime.now().microsecondsSinceEpoch.toString();
+  String _id() => DateTime.now().microsecondsSinceEpoch.toString(); // real time: ids must never repeat
 
   void moveBlock(String id, int minutes) => mutate(() {
         final b = _detach(id);
@@ -730,6 +728,14 @@ class Store extends ChangeNotifier {
 
   void addBlock(Block b) => mutate(() => blocks.add(b));
 
+  /// Changes a block's colour on the spot. A colour belongs to what the block
+  /// is rather than to one day of it, so for a repeating block the whole
+  /// series changes and no single day is split off.
+  void recolorBlock(String id, int color) => mutate(() {
+        final seriesId = id.split(kOccurrenceMark).first;
+        blocks.firstWhereOrNull((b) => b.id == seriesId)?.color = color;
+      });
+
   void replaceBlock(Block b) => mutate(() {
         if (b.id.contains(kOccurrenceMark)) {
           final parts = b.id.split(kOccurrenceMark);
@@ -744,7 +750,12 @@ class Store extends ChangeNotifier {
           return;
         }
         final i = blocks.indexWhere((x) => x.id == b.id);
-        if (i >= 0) blocks[i] = b;
+        if (i < 0) return;
+        // The editor hands back a fresh block and knows nothing of the days
+        // that were moved or dropped on their own. Losing that list put the
+        // series back on every one of them, on top of the moved copy.
+        b.skips = blocks[i].skips;
+        blocks[i] = b;
       });
 
   /// Inbox entries are templates: scheduling one leaves it in the list.
@@ -757,6 +768,7 @@ class Store extends ChangeNotifier {
       title: item.title,
       start: start,
       end: start + item.dur,
+      color: item.color,
     );
     addBlock(b);
     return b;
@@ -812,7 +824,7 @@ class Store extends ChangeNotifier {
 
   void _seedDemo() {
     final today = todayKey();
-    final tomorrow = dateKey(DateTime.now().add(const Duration(days: 1)));
+    final tomorrow = dayKey(1);
     blocks = [
       Block(id: 'b1', date: today, icon: 'directions_run', title: 'Morning run', start: 420, end: 465, repeat: 'Daily', alerts: ['At start of task']),
       Block(id: 'b2', date: today, icon: 'laptop_mac', title: 'Deep work: pricing page', start: 540, end: 630, alerts: ['At start of task']),
@@ -832,7 +844,7 @@ class Store extends ChangeNotifier {
       Task(id: 't1', title: 'Pay the electricity bill', time: 1080, date: today),
       Task(id: 't2', title: 'Renew passport'),
       Task(id: 't3', title: 'Water the plants', done: true),
-      Task(id: 't4', title: 'Send the invoice', time: 600, date: dateKey(DateTime.now().add(const Duration(days: 2)))),
+      Task(id: 't4', title: 'Send the invoice', time: 600, date: dayKey(2)),
     ];
     habits = [
       Habit(id: 'h1', title: 'Read 20 pages', icon: 'book', time: 1350, history: _history([1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 14, 15, 16, 17, 18, 19, 20, 22, 24, 25, 26, 27, 28, 30, 0])),
@@ -843,8 +855,7 @@ class Store extends ChangeNotifier {
   }
 
   Map<String, bool> _history(List<int> daysAgo) {
-    final now = DateTime.now();
-    return {for (final d in daysAgo) dateKey(now.subtract(Duration(days: d))): true};
+    return {for (final d in daysAgo) dayKey(-d): true};
   }
 }
 

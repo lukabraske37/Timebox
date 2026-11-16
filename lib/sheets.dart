@@ -144,13 +144,21 @@ class _BlockSheetState extends State<_BlockSheet> {
 
   /// Opens the editor for [existing], or for a new alert when null.
   Future<void> _editAlert(String? existing) async {
+    final store = AppScope.of(context);
+    final base = AppScope.colorsOf(context);
+    final colors = store.blockColorIcons ? base.withAccent(base.item(_color)) : base;
     final result = await showDialog<({String label, bool ring})>(
       context: context,
-      builder: (_) => AlertEditor(
-        label: existing ?? (_alerts.contains(kAtStart) ? alertLabel(15) : kAtStart),
-        ring: existing != null && _rings.contains(existing),
-        start: _start,
-        duration: _dur,
+      // A dialog is built above the sheet, so it is handed the sheet's colours.
+      builder: (_) => AppScope(
+        store: store,
+        colors: colors,
+        child: AlertEditor(
+          label: existing ?? (_alerts.contains(kAtStart) ? alertLabel(15) : kAtStart),
+          ring: existing != null && _rings.contains(existing),
+          start: _start,
+          duration: _dur,
+        ),
       ),
     );
     if (result == null || !mounted) return;
@@ -169,19 +177,35 @@ class _BlockSheetState extends State<_BlockSheet> {
   @override
   Widget build(BuildContext context) {
     final store = AppScope.of(context);
-    final c = AppScope.colorsOf(context);
+    final base = AppScope.colorsOf(context);
     final editing = widget.existing != null;
-    final palette = c.isDark ? kBlockColorsDark : kBlockColorsLight;
+    // The sheet wears the block's own colour. A colour chosen half way down
+    // then shows at once on everything in view — the title tile, the time,
+    // the chips, the button — instead of only on a tile that has scrolled
+    // out of sight by the time the swatches are reached.
+    final tint = store.blockColorIcons ? base.item(_color) : null;
+    final c = tint == null ? base : base.withAccent(tint);
 
     return SheetFrame(
-      title: editing ? 'Edit Task' : 'New Task',
+      title: editing ? 'Edit Block' : 'New Block',
       maxHeightFactor: 0.94,
+      accent: tint,
+      header: TitleField(
+        controller: _title,
+        icon: _icon,
+        hint: 'Block title',
+        autofocus: !editing,
+        onPickIcon: () async {
+          final picked = await openIconPicker(context, _icon, tint: c.acc);
+          if (picked != null) setState(() => _icon = picked);
+        },
+      ),
       footer: Column(children: [
-        PrimaryButton(label: editing ? 'Save Changes' : 'Create Task', onTap: _save),
+        PrimaryButton(label: editing ? 'Save Changes' : 'Create Block', onTap: _save),
         if (editing) ...[
           const SizedBox(height: 10),
           DeleteButton(
-            label: 'Delete Task',
+            label: 'Delete Block',
             onTap: () {
               store.deleteBlock(widget.existing!.id);
               Navigator.pop(context);
@@ -190,16 +214,6 @@ class _BlockSheetState extends State<_BlockSheet> {
         ],
       ]),
       children: [
-        TitleField(
-            controller: _title,
-            icon: _icon,
-            hint: 'Task title',
-            tint: store.blockColorIcons ? palette[_color % palette.length] : c.acc,
-            onPickIcon: () async {
-          final picked = await openIconPicker(context, _icon);
-          if (picked != null) setState(() => _icon = picked);
-        }),
-        const SizedBox(height: 24),
         FieldLabel('When?', trailing: _fine ? 'Less…' : 'More…', onTrailing: () => setState(() => _fine = !_fine)),
         const SizedBox(height: 10),
         _timeWheel(store, c),
@@ -240,30 +254,21 @@ class _BlockSheetState extends State<_BlockSheet> {
           Text('Set to ${durLabel(_dur)}',
               style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: c.acc)),
         ],
-        const SizedBox(height: 22),
-        FieldLabel('What color?'),
-        const SizedBox(height: 12),
-        Row(children: [
-          for (var i = 0; i < palette.length; i++) ...[
-            if (i > 0) const SizedBox(width: 12),
-            GestureDetector(
-              onTap: () => setState(() => _color = i),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 140),
-                width: 36,
-                height: 36,
-                padding: EdgeInsets.all(_color == i ? 4 : 0),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: _color == i ? Border.all(color: palette[i], width: 2.5) : null,
-                ),
-                child: DecoratedBox(
-                  decoration: BoxDecoration(color: palette[i], shape: BoxShape.circle),
-                ),
-              ),
-            ),
-          ],
-        ]),
+        if (store.blockColorIcons) ...[
+          const SizedBox(height: 22),
+          const FieldLabel('What color?'),
+          const SizedBox(height: 12),
+          ColorRow(
+            value: _color,
+            onChanged: (v) {
+              setState(() => _color = v ?? 0);
+              // A block that already exists changes there and then, not only
+              // on Save: closing the sheet any other way used to throw the
+              // colour away without a word.
+              if (editing) store.recolorBlock(widget.existing!.id, _color);
+            },
+          ),
+        ],
         const SizedBox(height: 22),
         FieldLabel('How often?'),
         const SizedBox(height: 12),
@@ -290,7 +295,7 @@ class _BlockSheetState extends State<_BlockSheet> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text(a, style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600, color: c.txt)),
+                    Text(alertText(a), style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600, color: c.txt)),
                     const SizedBox(height: 2),
                     Text(
                       '${_rings.contains(a) ? 'Alarm' : 'Notification'} · '
@@ -557,7 +562,7 @@ class _SimpleSheetState extends State<_SimpleSheet> {
   /// blue, whatever the app is set to.
   Future<void> _pickDate() async {
     final c = AppScope.colorsOf(context);
-    final now = DateTime.now();
+    final now = clock();
     final picked = await showDatePicker(
       context: context,
       initialDate: _date == null ? now : keyToDate(_date!),
@@ -688,7 +693,7 @@ class _SimpleSheetState extends State<_SimpleSheet> {
                 height: 40,
                 selected: _dueIn == 1,
                 onTap: () => setState(
-                    () => _date = dateKey(DateTime.now().add(const Duration(days: 1)))),
+                    () => _date = dayKey(1)),
               ),
             ),
             const SizedBox(width: 7),

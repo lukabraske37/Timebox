@@ -104,7 +104,7 @@ class HabitDetail extends StatelessWidget {
     final h = store.habits.firstWhereOrNull((x) => x.id == habitId);
     if (h == null) return const SizedBox.shrink();
     final range = kRanges.firstWhere((r) => r.key == store.habitRange, orElse: () => kRanges.first);
-    final today = DateTime.now();
+    final today = clock();
 
     final hitsInRange = List.generate(range.days, (i) => dateKey(today.subtract(Duration(days: i))))
         .where(h.doneOn)
@@ -194,7 +194,7 @@ class HabitDetail extends StatelessWidget {
       );
 
   Widget _bars(AppColors c, Habit h, HabitRange range) {
-    final today = DateTime.now();
+    final today = clock();
     final bars = <({String label, double ratio})>[];
 
     if (range.monthly) {
@@ -244,7 +244,7 @@ class HabitDetail extends StatelessWidget {
   /// Short ranges read as a calendar; long ones transpose to weekday rows so a
   /// year fits on one screen instead of 52 tall rows.
   Widget _grid(Store store, AppColors c, Habit h, HabitRange range) {
-    final today = DateTime.now();
+    final today = clock();
     final days = List.generate(range.days, (i) => today.subtract(Duration(days: range.days - 1 - i)));
 
     if (range.days <= 40) {

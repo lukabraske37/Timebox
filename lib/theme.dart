@@ -165,16 +165,56 @@ class AppColors {
   }
 
   static Color accentSwatch(String name) => (_accents[name] ?? _accents['teal']!)[0];
+
+  /// The colour an item wears: its own from the block palette, or the accent
+  /// when it has none.
+  Color item(int? index) {
+    if (index == null) return acc;
+    final palette = isDark ? kBlockColorsDark : kBlockColorsLight;
+    return palette[index % palette.length];
+  }
+
+  /// Text and icons that sit on top of [fill].
+  static Color onColor(Color fill) =>
+      fill.computeLuminance() > 0.42 ? const Color(0xFF10151A) : Colors.white;
+
+  /// This palette with [accent] standing in for the accent. An editor uses it
+  /// to dress itself in the colour of the thing being edited, so choosing a
+  /// colour shows on every button and chip at once.
+  AppColors withAccent(Color accent) => AppColors(
+        bg: bg,
+        surf: surf,
+        surf2: surf2,
+        node: node,
+        line: line,
+        txt: txt,
+        txt2: txt2,
+        txt3: txt3,
+        acc: accent,
+        accTxt: onColor(accent),
+        accTint: accent.withOpacity(isDark ? 0.14 : 0.13),
+        acc2: accent,
+        danger: danger,
+        onDanger: onDanger,
+        isDark: isDark,
+      );
 }
 
-/// Block colours, tuned per mode so light themes stay legible.
+/// Block colours, tuned per mode so light themes stay legible. A block stores
+/// the position of its colour here, so this list is only ever added to.
 const List<Color> kBlockColorsDark = [
-  Color(0xFF74EFD1),
-  Color(0xFFF98C7B),
-  Color(0xFFF5C563),
-  Color(0xFFA7DC6A),
-  Color(0xFF7FA9F0),
-  Color(0xFF57C4D4),
+  Color(0xFF74EFD1), // teal
+  Color(0xFFF98C7B), // coral
+  Color(0xFFF5C563), // amber
+  Color(0xFFA7DC6A), // lime
+  Color(0xFF7FA9F0), // blue
+  Color(0xFF57C4D4), // cyan
+  Color(0xFFB9A2FF), // violet
+  Color(0xFFF79BCB), // pink
+  Color(0xFFFFAA66), // orange
+  Color(0xFF6FD98F), // green
+  Color(0xFFD9BC9C), // sand
+  Color(0xFFB4BEC9), // grey
 ];
 
 const List<Color> kBlockColorsLight = [
@@ -184,4 +224,15 @@ const List<Color> kBlockColorsLight = [
   Color(0xFF4E7B1C),
   Color(0xFF2F5FB5),
   Color(0xFF1F7A8C),
+  Color(0xFF6B4FD0),
+  Color(0xFFB8377F),
+  Color(0xFFB85C0F),
+  Color(0xFF1F8A47),
+  Color(0xFF8A6240),
+  Color(0xFF56616E),
+];
+
+const List<String> kBlockColorNames = [
+  'Teal', 'Coral', 'Amber', 'Lime', 'Blue', 'Cyan',
+  'Violet', 'Pink', 'Orange', 'Green', 'Sand', 'Grey',
 ];

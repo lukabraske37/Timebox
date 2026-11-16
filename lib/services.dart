@@ -69,13 +69,22 @@ class Notifications {
         onDidReceiveBackgroundNotificationResponse: onAlarmAction,
       );
 
+  /// Never throws: the app has to open whether or not Android lets it alert.
+  /// What went wrong is kept in [lastError] for Settings to show.
   static Future<void> init() async {
     if (_ready) return;
-    await _zones();
-    await _start();
-    await _android?.requestNotificationsPermission();
-    await _android?.requestExactAlarmsPermission();
-    _ready = true;
+    try {
+      await _zones();
+      await _start();
+      _ready = true;
+    } catch (e) {
+      lastError = e.toString();
+      return;
+    }
+    try {
+      await _android?.requestNotificationsPermission();
+      await _android?.requestExactAlarmsPermission();
+    } catch (_) {}
   }
 
   static Future<AlertStatus> status() async {
@@ -154,7 +163,7 @@ class Notifications {
   /// tomorrow. For reminders that belong to a time of day, not to a date.
   static DateTime _nextAt(int minutes) {
     final when = _moment(todayKey(), minutes);
-    return when.isAfter(DateTime.now()) ? when : _moment(dateKey(DateTime.now().add(const Duration(days: 1))), minutes);
+    return when.isAfter(DateTime.now()) ? when : _moment(dayKey(1), minutes);
   }
 
   /// Why the last attempt to schedule something failed, if it did. Shown in

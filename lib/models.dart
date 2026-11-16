@@ -10,6 +10,11 @@ const String kAppBuild = String.fromEnvironment('BUILD', defaultValue: 'dev');
 
 const int kStep = 5;
 
+/// The app's clock. Everything that asks what day or time it is asks this, so
+/// a test can stand on a particular day — the night the clocks go back, say —
+/// instead of waiting for one to come round.
+DateTime Function() clock = DateTime.now;
+
 /// How long Snooze puts an alarm off for.
 const int kSnoozeMinutes = 10;
 
@@ -59,10 +64,23 @@ DateTime keyToDate(String key) {
   return DateTime(p[0], p[1], p[2]);
 }
 
-String todayKey() => dateKey(DateTime.now());
+String todayKey() => dateKey(clock());
+
+/// [d] moved by [n] calendar days. `d.add(Duration(days: n))` moves it by
+/// n × 24 hours instead, and twice a year a day is 23 or 25 hours long: the
+/// result is then an hour off, which is enough to land on the wrong date.
+DateTime addDays(DateTime d, int n) => DateTime(d.year, d.month, d.day + n, d.hour, d.minute);
+
+/// The date [n] days from today as a key; negative for the past.
+String dayKey(int n) => dateKey(addDays(clock(), n));
+
+/// Whole calendar days from [a] to [b], whatever the hour on either. Counted
+/// in UTC, where every day is the same length.
+int daysBetween(DateTime a, DateTime b) =>
+    DateTime.utc(b.year, b.month, b.day).difference(DateTime.utc(a.year, a.month, a.day)).inDays;
 
 int nowMinutes() {
-  final n = DateTime.now();
+  final n = clock();
   return n.hour * 60 + n.minute;
 }
 
@@ -187,15 +205,19 @@ class InboxItem {
   String title;
   int dur;
 
-  InboxItem({required this.id, required this.icon, required this.title, required this.dur});
+  /// The colour every block made from this entry starts with.
+  int color;
 
-  Map<String, dynamic> toJson() => {'id': id, 'icon': icon, 'title': title, 'dur': dur};
+  InboxItem({required this.id, required this.icon, required this.title, required this.dur, this.color = 0});
+
+  Map<String, dynamic> toJson() => {'id': id, 'icon': icon, 'title': title, 'dur': dur, 'color': color};
 
   static InboxItem fromJson(Map<String, dynamic> j) => InboxItem(
         id: j['id'] as String,
         icon: j['icon'] as String? ?? 'label',
         title: j['title'] as String? ?? '',
         dur: (j['dur'] as num?)?.toInt() ?? 30,
+        color: (j['color'] as num?)?.toInt() ?? 0,
       );
 }
 
@@ -241,6 +263,9 @@ class Habit {
   /// Ring as an alarm at [time] instead of sending a notification.
   bool alarm;
 
+  /// Its place in the block palette, or null to wear the app's accent.
+  int? color;
+
   Habit({
     required this.id,
     required this.title,
@@ -248,17 +273,45 @@ class Habit {
     this.time,
     Map<String, bool>? history,
     this.alarm = false,
+    this.color,
   }) : history = history ?? <String, bool>{};
 
   bool doneOn(String key) => history[key] == true;
 
-  /// Consecutive days ticked, counting back from today.
+  /// Consecutive days ticked, counting back from today. A day that is not
+  /// over yet cannot have broken anything, so until today is ticked the run
+  /// that reached yesterday still stands.
   int get streak {
+    var back = doneOn(dayKey(0)) ? 0 : 1;
     var n = 0;
-    var d = DateTime.now();
-    while (doneOn(dateKey(d))) {
+    while (doneOn(dayKey(-back))) {
       n++;
-      d = d.subtract(const Duration(days: 1));
+      back++;
+    }
+    return n;
+  }
+
+  /// The longest run of consecutive days there has ever been.
+  int get bestStreak {
+    final days = history.keys.where(doneOn).map(keyToDate).toList()..sort();
+    var best = 0, run = 0;
+    DateTime? prev;
+    for (final d in days) {
+      run = prev != null && daysBetween(prev, d) == 1 ? run + 1 : 1;
+      if (run > best) best = run;
+      prev = d;
+    }
+    return best;
+  }
+
+  /// How many days it has been ticked in all.
+  int get total => history.keys.where(doneOn).length;
+
+  /// How many of the [days] days ending today it was ticked on.
+  int hitsIn(int days) {
+    var n = 0;
+    for (var i = 0; i < days; i++) {
+      if (doneOn(dayKey(-i))) n++;
     }
     return n;
   }
@@ -270,6 +323,7 @@ class Habit {
         'time': time,
         'history': history,
         'alarm': alarm,
+        'color': color,
       };
 
   static Habit fromJson(Map<String, dynamic> j) => Habit(
@@ -279,6 +333,7 @@ class Habit {
         time: (j['time'] as num?)?.toInt(),
         history: (j['history'] as Map?)?.map((k, v) => MapEntry(k.toString(), v == true)),
         alarm: j['alarm'] == true,
+        color: (j['color'] as num?)?.toInt(),
       );
 }
 
@@ -326,11 +381,7 @@ class TimelineLayout {
 /// Whole days from today to [key]: 0 today, 1 tomorrow, negative once it has
 /// gone by. Compared date to date, so the hour of day never tips the count.
 int daysUntil(String key) {
-  final d = keyToDate(key);
-  final now = DateTime.now();
-  return DateTime(d.year, d.month, d.day)
-      .difference(DateTime(now.year, now.month, now.day))
-      .inDays;
+  return daysBetween(clock(), keyToDate(key));
 }
 
 /// A due date in the words you would use out loud: the next few days by name,
@@ -342,7 +393,7 @@ String dueLabel(String key) {
   if (n == -1) return 'Yesterday';
   final d = keyToDate(key);
   if (n > 1 && n < 7) return weekdayName(d).substring(0, 3);
-  final year = d.year == DateTime.now().year ? '' : ' ${d.year}';
+  final year = d.year == clock().year ? '' : ' ${d.year}';
   return '${d.day} ${monthShort(d.month)}$year';
 }
 
