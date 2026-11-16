@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../models.dart';
 import '../sheets.dart';
+import '../store.dart';
 import '../ui.dart';
 
 class TasksScreen extends StatelessWidget {
@@ -10,23 +12,9 @@ class TasksScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final store = AppScope.of(context);
-    final c = AppScope.colorsOf(context);
     final done = store.tasks.where((t) => t.done).length;
     final left = store.tasks.length - done;
-    // Finished tasks sink to the bottom so what is still open stays in reach,
-    // and what is open is ordered by when it is due: overdue first, then the
-    // next few days, then the undated ones, which keep the order they came in.
-    final open = store.tasks.where((t) => !t.done).toList();
-    final dated = open.where((t) => t.date != null).toList()
-      ..sort((a, b) {
-        final day = a.date!.compareTo(b.date!);
-        return day != 0 ? day : (a.time ?? 0).compareTo(b.time ?? 0);
-      });
-    final ordered = [
-      ...dated,
-      ...open.where((t) => t.date == null),
-      ...store.tasks.where((t) => t.done),
-    ];
+    final sections = taskSections(store.tasks);
 
     return Column(children: [
       ScreenTitle(
@@ -37,15 +25,6 @@ class TasksScreen extends StatelessWidget {
                 if (left > 0) '$left left',
                 if (done > 0) '$done done',
               ].join(' · '),
-        trailing: GestureDetector(
-          onTap: () => _confirmClear(context, done),
-          child: Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(color: c.surf, shape: BoxShape.circle),
-            child: Icon(Icons.delete_sweep, size: 21, color: c.txt2),
-          ),
-        ),
       ),
       Expanded(
         child: store.tasks.isEmpty
@@ -56,136 +35,153 @@ class TasksScreen extends StatelessWidget {
                   body: "Note it down, get a notification when it's due.",
                 ),
               )
-            : ListView.separated(
-                padding: const EdgeInsets.fromLTRB(18, 6, 18, 120),
-                itemCount: ordered.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 10),
-                itemBuilder: (context, i) {
-                  final t = ordered[i];
-                  return Panel(
-                    radius: 16,
-                    padding: const EdgeInsets.all(13),
-                    child: Row(children: [
-                      GestureDetector(
-                        onTap: () => store.toggleTask(t.id),
-                        child: Container(
-                          width: 28,
-                          height: 28,
-                          decoration: BoxDecoration(
-                            color: t.done ? c.acc : Colors.transparent,
-                            shape: BoxShape.circle,
-                            border: Border.all(color: c.acc, width: 2.5),
-                          ),
-                          child: t.done ? Icon(Icons.check, size: 17, color: c.accTxt) : null,
-                        ),
+            : ListView(
+                padding: const EdgeInsets.fromLTRB(18, 0, 18, 120),
+                children: [
+                  for (final section in sections) ...[
+                    _heading(context, store, section),
+                    for (final task in section.tasks)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: _TaskRow(task: task, section: section),
                       ),
-                      const SizedBox(width: 13),
-                      Expanded(
-                        child: GestureDetector(
-                          onTap: () => openTaskSheet(context, existing: t),
-                          behavior: HitTestBehavior.opaque,
-                          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                            Text(
-                              t.title,
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: t.done ? c.txt3 : c.txt,
-                                decoration: t.done ? TextDecoration.lineThrough : null,
-                                decorationColor: c.txt3,
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            // Wrapped rather than a Row: a task due on a named
-                            // day with a reminder on it runs out of width on a
-                            // narrow phone, and the chips belong under each
-                            // other rather than clipped.
-                            Wrap(
-                              spacing: 6,
-                              runSpacing: 6,
-                              crossAxisAlignment: WrapCrossAlignment.center,
-                              children: [
-                                _Chip(
-                                  icon: Icons.event,
-                                  label: t.date == null ? 'Someday' : dueLabel(t.date!),
-                                  set: t.date != null,
-                                  // An overdue task says so in red, but only
-                                  // while it is still open.
-                                  danger: !t.done && t.date != null && daysUntil(t.date!) < 0,
-                                ),
-                                _Chip(
-                                  icon: Icons.schedule,
-                                  label: t.time == null ? 'Set time' : fmtMins(t.time!, store.use24),
-                                  set: t.time != null,
-                                ),
-                                if (t.time != null)
-                                  Icon(t.alarm ? Icons.alarm : Icons.notifications,
-                                      size: 16, color: t.done ? c.txt3 : c.txt2),
-                              ],
-                            ),
-                          ]),
-                        ),
-                      ),
-                      GestureDetector(
-                        onTap: () => openTaskSheet(context, existing: t),
-                        // A full-size target: the pencil alone is 18 pixels.
-                        behavior: HitTestBehavior.opaque,
-                        child: Padding(
-                          padding: const EdgeInsets.all(13),
-                          child: Icon(Icons.edit, size: 18, color: c.txt3),
-                        ),
-                      ),
-                    ]),
-                  );
-                },
+                  ],
+                ],
               ),
       ),
     ]);
   }
 
-  void _confirmClear(BuildContext context, int done) {
+  Widget _heading(BuildContext context, Store store, TaskSection section) {
+    final c = AppScope.colorsOf(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(6, 14, 0, 4),
+      child: Row(children: [
+        Expanded(
+          child: Text(
+            '${section.title.toUpperCase()}  ·  ${section.tasks.length}',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.2,
+              color: section.late ? c.danger : c.txt3,
+            ),
+          ),
+        ),
+        // Clearing belongs beside the things it clears.
+        if (section.done)
+          TextButton(
+            onPressed: () => _confirmClear(context, section.tasks.length),
+            style: TextButton.styleFrom(
+              foregroundColor: c.txt2,
+              minimumSize: const Size(0, 36),
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+            ),
+            child: const Text('Clear', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+          )
+        else
+          const SizedBox(height: 36),
+      ]),
+    );
+  }
+
+  Future<void> _confirmClear(BuildContext context, int done) async {
+    final store = AppScope.of(context);
+    final ok = await confirm(
+      context,
+      title: 'Clear completed tasks?',
+      body: 'This removes $done finished ${done == 1 ? 'task' : 'tasks'}.',
+      action: 'Clear',
+      danger: true,
+    );
+    if (ok) store.clearDoneTasks();
+  }
+}
+
+/// One task: its tick, its name, and whatever it has been given by way of a
+/// date and a reminder. Tapping the row opens it; swiping it away deletes it.
+class _TaskRow extends StatelessWidget {
+  final Task task;
+  final TaskSection section;
+  const _TaskRow({required this.task, required this.section});
+
+  @override
+  Widget build(BuildContext context) {
     final store = AppScope.of(context);
     final c = AppScope.colorsOf(context);
-    showDialog(
-      context: context,
-      builder: (_) => Dialog(
-        backgroundColor: c.surf,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('Clear completed tasks?',
-                style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800, color: c.txt)),
-            const SizedBox(height: 10),
-            Text(
-              done == 0
-                  ? 'Nothing is struck through yet, so nothing will be removed.'
-                  : 'This removes $done struck-through ${done == 1 ? 'task' : 'tasks'} for good.',
-              style: TextStyle(fontSize: 14, height: 1.5, color: c.txt2),
+    final t = task;
+    // Under "Today" and "Tomorrow" the heading has already said the day.
+    final showDate = t.date != null && (section.late || section.title == 'Later' || section.done);
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: Dismissible(
+        key: ValueKey('task-${t.id}'),
+        direction: DismissDirection.endToStart,
+        // Deleting offers Undo at the foot of the screen, so a swipe needs no
+        // question asked first.
+        onDismissed: (_) => store.deleteTask(t.id),
+        background: Container(
+          color: c.danger.withOpacity(c.isDark ? 0.22 : 0.14),
+          alignment: Alignment.centerRight,
+          padding: const EdgeInsets.only(right: 20),
+          child: Icon(Icons.delete_outline, color: c.danger),
+        ),
+        child: Panel(
+          radius: 16,
+          padding: const EdgeInsets.fromLTRB(6, 6, 14, 6),
+          onTap: () => openTaskSheet(context, existing: t),
+          child: Row(children: [
+            CheckCircle(
+              done: t.done,
+              color: c.acc,
+              size: 26,
+              label: t.done ? '${t.title}, done' : '${t.title}, not done',
+              onTap: () {
+                HapticFeedback.selectionClick();
+                store.toggleTask(t.id);
+              },
             ),
-            const SizedBox(height: 22),
-            Row(children: [
-              Expanded(
-                child: PrimaryButton(
-                  label: 'Cancel',
-                  background: c.surf2,
-                  foreground: c.txt2,
-                  onTap: () => Navigator.pop(context),
-                ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 7),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(
+                    t.title,
+                    style: TextStyle(
+                      fontSize: 15.5,
+                      fontWeight: FontWeight.w600,
+                      color: t.done ? c.txt3 : c.txt,
+                      decoration: t.done ? TextDecoration.lineThrough : null,
+                      decorationColor: c.txt3,
+                    ),
+                  ),
+                  if (showDate || t.time != null) ...[
+                    const SizedBox(height: 6),
+                    // Wrapped rather than a Row: a date and a reminder run
+                    // out of width on a narrow phone, and belong under each
+                    // other rather than clipped.
+                    Wrap(spacing: 6, runSpacing: 6, children: [
+                      if (showDate)
+                        _Chip(
+                          icon: Icons.event,
+                          label: dueLabel(t.date!),
+                          muted: t.done,
+                          danger: section.late,
+                        ),
+                      if (t.time != null)
+                        _Chip(
+                          // The icon says which kind of reminder it is.
+                          icon: t.alarm ? Icons.alarm : Icons.notifications,
+                          label: fmtMins(t.time!, store.use24),
+                          muted: t.done,
+                        ),
+                    ]),
+                  ],
+                ]),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: PrimaryButton(
-                  label: 'Delete',
-                  background: c.danger,
-                  foreground: c.onDanger,
-                  onTap: () {
-                    store.clearDoneTasks();
-                    Navigator.pop(context);
-                  },
-                ),
-              ),
-            ]),
+            ),
           ]),
         ),
       ),
@@ -193,30 +189,29 @@ class TasksScreen extends StatelessWidget {
   }
 }
 
-/// One of the small pills under a task's title: due date, time, state.
+/// One of the small pills under a task's title.
 class _Chip extends StatelessWidget {
   final IconData icon;
   final String label;
 
-  /// Whether the task actually carries this value, or the pill is an invitation
-  /// to set one.
-  final bool set;
+  /// The task is finished, so this is only a record of what it was.
+  final bool muted;
   final bool danger;
 
-  const _Chip({required this.icon, required this.label, required this.set, this.danger = false});
+  const _Chip({required this.icon, required this.label, this.muted = false, this.danger = false});
 
   @override
   Widget build(BuildContext context) {
     final c = AppScope.colorsOf(context);
-    final fg = danger ? c.danger : (set ? c.acc : c.txt3);
+    final fg = muted ? c.txt3 : (danger ? c.danger : c.acc);
     return Container(
-      height: 22,
+      height: 23,
       padding: const EdgeInsets.symmetric(horizontal: 9),
       decoration: BoxDecoration(
-        color: danger
-            ? c.danger.withOpacity(c.isDark ? 0.18 : 0.10)
-            : (set ? c.accTint : c.surf2),
-        borderRadius: BorderRadius.circular(11),
+        color: muted
+            ? c.surf2
+            : (danger ? c.danger.withOpacity(c.isDark ? 0.18 : 0.10) : c.accTint),
+        borderRadius: BorderRadius.circular(12),
       ),
       // Shrink to the label. Inside a Wrap the incoming width is bounded, so a
       // Row left at its default would stretch each pill across the card.

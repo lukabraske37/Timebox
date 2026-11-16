@@ -541,6 +541,16 @@ class Store extends ChangeNotifier {
 
   List<DateTime> get weekDays => List.generate(7, (i) => addDays(weekStart, i));
 
+  /// Shows [day], bringing the week strip along if it lies in another week.
+  void selectDay(DateTime day) => mutate(() {
+        final today = clock();
+        final shift = sundayFirst ? today.weekday % 7 : today.weekday - 1;
+        final thisWeek = addDays(DateTime(today.year, today.month, today.day), -shift);
+        selected = DateTime(day.year, day.month, day.day);
+        weekOffset = (daysBetween(thisWeek, selected) / 7).floor();
+        selectedBlockId = null;
+      });
+
   /// Everything planned for [key]: the blocks actually filed on that date,
   /// plus the copies any repeating block casts forward onto it.
   List<Block> blocksOn(String key) {

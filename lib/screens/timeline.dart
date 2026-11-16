@@ -38,7 +38,17 @@ class _TimelineScreenState extends State<TimelineScreen> {
       Column(children: [
         _header(store, c),
         Expanded(
-          child: layout.rows.isEmpty
+          // A flick sideways moves a day on or back. It has to be a flick:
+          // a slow drift across the screen while scrolling should not.
+          child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onHorizontalDragEnd: (d) {
+              final v = d.primaryVelocity ?? 0;
+              if (v.abs() < 400 || _dragId != null || _resizeId != null) return;
+              HapticFeedback.selectionClick();
+              store.selectDay(addDays(store.selected, v < 0 ? 1 : -1));
+            },
+            child: layout.rows.isEmpty
               ? _empty(store, c)
               : SingleChildScrollView(
                   padding: EdgeInsets.fromLTRB(18, 12, 18, selected != null ? 280 : 150),
@@ -55,6 +65,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
                     ),
                   ]),
                 ),
+          ),
         ),
       ]),
       if (_dragId != null) _trashZone(c),
@@ -84,12 +95,37 @@ class _TimelineScreenState extends State<TimelineScreen> {
               _daySummary(store, c),
             ]),
           ),
-          _weekArrow(c, Icons.chevron_left, () => store.mutate(() => store.weekOffset--)),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: c.txt2)),
-          ),
-          _weekArrow(c, Icons.chevron_right, () => store.mutate(() => store.weekOffset++)),
+          Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+            // Only offered when there is somewhere to come back from.
+            if (!store.selectedIsToday || store.weekOffset != 0) ...[
+              Material(
+                color: c.accTint,
+                borderRadius: BorderRadius.circular(15),
+                child: InkWell(
+                  key: const ValueKey('go-today'),
+                  borderRadius: BorderRadius.circular(15),
+                  onTap: () => store.selectDay(clock()),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(Icons.today, size: 15, color: c.acc),
+                      const SizedBox(width: 5),
+                      Text('Today', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: c.acc)),
+                    ]),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+            Row(mainAxisSize: MainAxisSize.min, children: [
+              _weekArrow(c, Icons.chevron_left, 'Previous week', () => store.mutate(() => store.weekOffset--)),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: c.txt2)),
+              ),
+              _weekArrow(c, Icons.chevron_right, 'Next week', () => store.mutate(() => store.weekOffset++)),
+            ]),
+          ]),
         ]),
         const SizedBox(height: 14),
         Row(
@@ -97,10 +133,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
             for (final d in days)
               Expanded(
                 child: GestureDetector(
-                  onTap: () => store.mutate(() {
-                    store.selected = d;
-                    store.selectedBlockId = null;
-                  }),
+                  onTap: () => store.selectDay(d),
                   behavior: HitTestBehavior.opaque,
                   child: _dayChip(store, c, d),
                 ),
@@ -128,26 +161,43 @@ class _TimelineScreenState extends State<TimelineScreen> {
     );
   }
 
-  Widget _weekArrow(AppColors c, IconData icon, VoidCallback onTap) => GestureDetector(
-        onTap: onTap,
-        child: Container(
-          width: 28,
-          height: 28,
-          decoration: BoxDecoration(color: c.surf, shape: BoxShape.circle),
-          child: Icon(icon, size: 17, color: c.txt2),
+  Widget _weekArrow(AppColors c, IconData icon, String label, VoidCallback onTap) => Semantics(
+        button: true,
+        label: label,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          // The circle is drawn small; the padding round it is the rest of a
+          // target a thumb can find.
+          child: Padding(
+            padding: const EdgeInsets.all(6),
+            child: Container(
+              width: 30,
+              height: 30,
+              decoration: BoxDecoration(color: c.surf, shape: BoxShape.circle),
+              child: Icon(icon, size: 18, color: c.txt2),
+            ),
+          ),
         ),
       );
 
   Widget _dayChip(Store store, AppColors c, DateTime d) {
     final key = dateKey(d);
     final isSelected = key == store.selectedKey;
-    final hasBlocks = store.blocks.any((b) => b.date == key);
-    return Container(
+    final isToday = key == todayKey();
+    // A block that repeats is only filed on the day it began, so ask what the
+    // day actually shows rather than what is stored against its date.
+    final hasBlocks = store.blocksOn(key).isNotEmpty;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 160),
       margin: const EdgeInsets.symmetric(horizontal: 3),
       padding: const EdgeInsets.symmetric(vertical: 7),
       decoration: BoxDecoration(
         color: isSelected ? c.accTint : Colors.transparent,
         borderRadius: BorderRadius.circular(16),
+        // Today keeps a ring when another day is being looked at, so the way
+        // back is always in sight.
+        border: Border.all(color: isToday && !isSelected ? c.acc.withOpacity(0.55) : Colors.transparent, width: 1.5),
       ),
       child: Column(children: [
         Text(['M', 'T', 'W', 'T', 'F', 'S', 'S'][d.weekday - 1],
@@ -531,9 +581,17 @@ class _TimelineScreenState extends State<TimelineScreen> {
                     Row(children: [
                       Flexible(
                         child: Text(
-                          live
-                              ? '${b.end - store.now}m left · ${durLabel(shownDur)}'
-                              : durLabel(shownDur),
+                          // Side by side there is no gutter to carry the
+                          // times, so the card's own first line says them;
+                          // a third line under the title had nowhere to go
+                          // but under the resize handle.
+                          tight
+                              ? (live
+                                  ? '${b.end - store.now}m left'
+                                  : fmtRange(shownStart, shownStart + shownDur, store.use24))
+                              : live
+                                  ? '${b.end - store.now}m left · ${durLabel(shownDur)}'
+                                  : durLabel(shownDur),
                           maxLines: 1,
                           overflow: TextOverflow.clip,
                           style: TextStyle(
@@ -569,15 +627,6 @@ class _TimelineScreenState extends State<TimelineScreen> {
                             fontWeight: FontWeight.w700,
                             letterSpacing: -0.2,
                             color: c.txt)),
-                    if (tight) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        '${fmtMins(shownStart, store.use24)} – ${fmtMins(shownStart + shownDur, store.use24)}',
-                        maxLines: 1,
-                        overflow: TextOverflow.clip,
-                        style: TextStyle(fontSize: 11, color: c.txt3),
-                      ),
-                    ],
                   ]),
             ),
           ]),
@@ -732,7 +781,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
                       style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: c.txt)),
                   const SizedBox(height: 3),
                   Text(
-                    '${fmtMins(b.start, store.use24)} – ${fmtMins(b.end, store.use24)} · ${durLabel(b.duration)}',
+                    '${fmtRange(b.start, b.end, store.use24)} · ${durLabel(b.duration)}',
                     style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: c.acc),
                   ),
                 ]),

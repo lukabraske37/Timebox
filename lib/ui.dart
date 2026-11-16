@@ -42,7 +42,12 @@ class Panel extends StatelessWidget {
     final c = AppScope.colorsOf(context);
     return Material(
       color: color ?? c.surf,
-      borderRadius: BorderRadius.circular(radius),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(radius),
+        // On a true-black background a card is only a shade off the screen
+        // behind it, so it is given an edge to be seen by.
+        side: c.bg == Colors.black ? BorderSide(color: c.line) : BorderSide.none,
+      ),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(radius),

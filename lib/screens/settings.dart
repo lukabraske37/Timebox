@@ -23,27 +23,45 @@ class SettingsScreen extends StatelessWidget {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(18, 6, 18, 40),
           children: [
-            const SectionLabel('Appearance'),
-            Panel(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Row(children: [
-                  Icon(Icons.dark_mode, size: 19, color: c.acc),
-                  const SizedBox(width: 10),
-                  Text('App Theme', style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700, color: c.txt)),
+            // A backup that is weeks old, or was never made, is said here
+            // rather than left to be found two screens down.
+            if (store.daysSinceBackup == null || store.daysSinceBackup! >= 14) ...[
+              Panel(
+                key: const ValueKey('backup-nudge'),
+                color: washOf(c, c.danger),
+                onTap: () => open(const BackupPage()),
+                child: Row(children: [
+                  Icon(Icons.cloud_off, size: 21, color: c.danger),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(
+                        store.daysSinceBackup == null
+                            ? 'No backup yet'
+                            : 'Last backup ${store.daysSinceBackup} days ago',
+                        style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700, color: c.txt),
+                      ),
+                      const SizedBox(height: 3),
+                      Text('Your plans live only on this phone. Save a copy.',
+                          style: TextStyle(fontSize: 12, color: c.txt2)),
+                    ]),
+                  ),
+                  Icon(Icons.chevron_right, size: 20, color: c.txt3),
                 ]),
-                const SizedBox(height: 14),
-                Segmented<String>(
-                  values: const ['dark', 'light', 'sepia'],
-                  labels: const ['Dark', 'Light', 'Sepia'],
-                  value: ['dark', 'light', 'sepia'].contains(store.theme) ? store.theme : 'dark',
-                  onChanged: (v) => store.mutate(() => store.theme = v),
-                ),
-              ]),
+              ),
+              const SizedBox(height: 22),
+            ],
+            const SectionLabel('Appearance'),
+            NavRow(
+              icon: Icons.palette,
+              title: 'Theme and accent',
+              subtitle: '${kThemeLabels[store.theme] ?? 'Dark'} · ${store.accent}',
+              onTap: () => open(const LookPage()),
             ),
             const SizedBox(height: 10),
             SwitchRow(
-              title: 'Color blocks by their icon',
-              subtitle: 'Off tints every node with the accent',
+              title: 'Colours for blocks and habits',
+              subtitle: 'Off tints everything with the accent',
               value: store.blockColorIcons,
               onChanged: (v) => store.mutate(() => store.blockColorIcons = v),
             ),
@@ -97,7 +115,7 @@ class SettingsScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 22),
-            const SectionLabel('General'),
+            const SectionLabel('Alerts'),
             NavRow(
               icon: Icons.notifications,
               title: 'Notifications & Alerts',
@@ -111,16 +129,10 @@ class SettingsScreen extends StatelessWidget {
               subtitle: store.alarmSoundName,
               onTap: () => open(const AlarmSoundPage()),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 22),
+            const SectionLabel('Your data'),
             NavRow(
-              icon: Icons.palette,
-              title: 'Look and Feel',
-              subtitle: '${kThemeLabels[store.theme] ?? 'Dark'} · ${store.accent}',
-              onTap: () => open(const LookPage()),
-            ),
-            const SizedBox(height: 10),
-            NavRow(
-              icon: Icons.download,
+              icon: Icons.save_alt,
               title: 'Backup',
               subtitle: store.daysSinceBackup == null
                   ? 'No backup file yet'
@@ -669,22 +681,36 @@ class LookPage extends StatelessWidget {
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text('Accent', style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700, color: c.txt)),
           const SizedBox(height: 14),
-          Row(children: [
-            for (final name in kAccentNames) ...[
-              GestureDetector(
-                onTap: () => store.mutate(() => store.accent = name),
-                child: Container(
-                  width: 36,
-                  height: 36,
-                  margin: const EdgeInsets.only(right: 14),
-                  decoration: BoxDecoration(
-                    color: AppColors.accentSwatch(name),
-                    shape: BoxShape.circle,
-                    border: store.accent == name ? Border.all(color: c.txt, width: 2.5) : null,
+          Wrap(spacing: 12, runSpacing: 12, children: [
+            for (final name in kAccentNames)
+              Semantics(
+                button: true,
+                selected: store.accent == name,
+                label: name,
+                child: GestureDetector(
+                  key: ValueKey('accent-$name'),
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => store.mutate(() => store.accent = name),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 140),
+                    width: 40,
+                    height: 40,
+                    padding: EdgeInsets.all(store.accent == name ? 4 : 0),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: store.accent == name
+                          ? Border.all(color: AppColors.accentSwatch(name), width: 2.5)
+                          : null,
+                    ),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(color: AppColors.accentSwatch(name), shape: BoxShape.circle),
+                      child: store.accent == name
+                          ? Icon(Icons.check, size: 17, color: AppColors.onColor(AppColors.accentSwatch(name)))
+                          : null,
+                    ),
                   ),
                 ),
               ),
-            ],
           ]),
           const SizedBox(height: 14),
           Text('Accent drives buttons, the now line and every highlight. Block colors stay their own.',

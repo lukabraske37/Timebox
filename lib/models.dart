@@ -189,6 +189,15 @@ String fmtMins(int mins, bool use24) {
   return '$hh:$mm $ap';
 }
 
+/// A span of time written the short way: "9:00 – 10:30 AM" rather than
+/// saying AM twice, since a narrow card has no room to.
+String fmtRange(int start, int end, bool use24) {
+  final a = fmtMins(start, use24), b = fmtMins(end, use24);
+  if (use24) return '$a – $b';
+  final sameHalf = (start % 1440 < 720) == (end % 1440 < 720);
+  return sameHalf ? '${a.substring(0, a.length - 3)} – $b' : '$a – $b';
+}
+
 String durLabel(int m) {
   if (m < 60) return '${m}m';
   final h = m ~/ 60, r = m % 60;
@@ -345,6 +354,45 @@ class Task {
         done: j['done'] as bool? ?? false,
         alarm: j['alarm'] == true,
       );
+}
+
+/// One run of the task list under a heading.
+class TaskSection {
+  final String title;
+  final List<Task> tasks;
+
+  /// The day has gone by with these still open.
+  final bool late;
+
+  /// These are finished.
+  final bool done;
+
+  const TaskSection(this.title, this.tasks, {this.late = false, this.done = false});
+}
+
+/// The task list as it is read: what is overdue, then today, tomorrow and
+/// later in the order they fall due, then the ones with no date in the order
+/// they were written down, and what is finished last. Empty runs are left out.
+List<TaskSection> taskSections(List<Task> tasks) {
+  final open = tasks.where((t) => !t.done).toList();
+  // Earliest day first, and within a day the earliest reminder; a task with
+  // no time goes after those that have one.
+  int byDue(Task a, Task b) {
+    final day = a.date!.compareTo(b.date!);
+    return day != 0 ? day : (a.time ?? 1440).compareTo(b.time ?? 1440);
+  }
+
+  List<Task> due(bool Function(int days) when) =>
+      open.where((t) => t.date != null && when(daysUntil(t.date!))).toList()..sort(byDue);
+
+  return [
+    TaskSection('Overdue', due((d) => d < 0), late: true),
+    TaskSection('Today', due((d) => d == 0)),
+    TaskSection('Tomorrow', due((d) => d == 1)),
+    TaskSection('Later', due((d) => d > 1)),
+    TaskSection('Someday', open.where((t) => t.date == null).toList()),
+    TaskSection('Done', tasks.where((t) => t.done).toList(), done: true),
+  ].where((s) => s.tasks.isNotEmpty).toList();
 }
 
 class Habit {
